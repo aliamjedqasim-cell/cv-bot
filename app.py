@@ -456,6 +456,7 @@ def ask(chat_id, step):
     if prefix:
         _, _, sel_key, extra_key, _ = MULTI[prefix]
         d[sel_key] = []
+        d["_typed_" + prefix] = []
         if extra_key:
             d[extra_key] = []
         res = send(chat_id, question, inline=multi_keyboard(prefix, d))
@@ -494,41 +495,80 @@ def refresh_languages(d):
     d["languages"] = langs[:6]
 
 
+def line(label, ar, en):
+    """'label: Arabic' and under it the English that goes on the CV (one line if they are the same)."""
+    ar = "، ".join(ar) if isinstance(ar, list) else (ar or "")
+    en = ", ".join(en) if isinstance(en, list) else (en or "")
+    if ar and has_ar(ar):
+        return f"{label} {esc(ar)}\n        🇬🇧 {esc(en)}"
+    return f"{label} {esc(en)}"
+
+
 def summary_text(sess):
     d = sess["data"]
     refresh_languages(d)
-    lines = ["📋 <b>راجع معلوماتك</b>\nهيچ راح تنكتب بالسي في 👇\n",
-             f"👤 {esc(d.get('full_name'))}", f"🎯 {esc(d.get('job_title'))}", f"📞 {esc(d.get('phone'))}"]
+    ar = d.get("_ar") or {}
+    lines = ["📋 <b>راجع معلوماتك</b>",
+             "اللي كتبته، وتحته 🇬🇧 شلون راح ينكتب بالسي في 👇\n",
+             line("👤 <b>الاسم:</b>", ar.get("name"), d.get("full_name")),
+             line("🎯 <b>الوظيفة:</b>", ar.get("job_title"), d.get("job_title")),
+             f"📞 <b>الهاتف:</b> {esc(d.get('phone'))}"]
     if d.get("email"):
-        lines.append(f"✉️ {esc(d['email'])}")
-    edu = " | ".join(esc(x) for x in (d.get("university"), d.get("degree"), edu_status_text(d)) if x)
-    lines += [f"📍 {esc(d.get('city'))}", f"🎓 {edu}"]
+        lines.append(f"✉️ <b>الإيميل:</b> {esc(d['email'])}")
+    lines.append(line("📍 <b>السكن:</b>", ar.get("city"), d.get("city")))
+    degree_ar = " - ".join(x for x in (ar.get("degree_level"), ar.get("specialty")) if x)
+    lines.append(line("🎓 <b>الشهادة:</b>", degree_ar, d.get("degree")))
+    if d.get("university"):
+        lines.append(line("🏫 <b>الجامعة:</b>", ar.get("university"), d.get("university")))
+    lines.append(line("📅 <b>الدراسة:</b>", ar.get("edu_status"), edu_status_text(d)))
     if d.get("has_experience"):
-        for e in d.get("experiences") or []:
-            bits = " | ".join(esc(x) for x in (e.get("title"), e.get("location"), e.get("duration")) if x)
-            lines.append(f"💼 {esc(e['company'])}" + (f" — {bits}" if bits else ""))
-            lines += [f"      • {esc(x)}" for x in (e.get("duties") or [])[:4]]
+        for n, e in enumerate(d.get("experiences") or [], 1):
+            jar = e.get("_ar") or {}
+            lines.append(line(f"💼 <b>الشغل {n}:</b>", jar.get("company"), e.get("company")))
+            details_ar = " - ".join(jar.get(k) or e.get(k) or "" for k in ("title", "location", "duration")
+                                    if jar.get(k) or e.get(k))
+            details_en = " | ".join(e.get(k) for k in ("title", "location", "duration") if e.get(k))
+            if details_en:
+                lines.append(line("      🔹", details_ar, details_en))
+            duties_ar = jar.get("duties") or []
+            for i, duty in enumerate((e.get("duties") or [])[:3]):
+                lines.append(line("      •", duties_ar[i] if i < len(duties_ar) else "", duty))
+            if not e.get("duties"):
+                lines.append("      • <i>راح أكتب مهام قوية مناسبة تلقائياً</i>")
         if is_field_role(d):
             if d.get("customers"):
-                lines.append(f"🩺 {esc(', '.join(d['customers']))}")
+                lines.append(line("🩺 <b>الزبائن:</b>", ar.get("customers"), d["customers"]))
             if d.get("products"):
-                lines.append(f"💊 {esc(d['products'])}")
+                lines.append(line("💊 <b>المنتجات:</b>", ar.get("products"), d["products"]))
             if d.get("territory"):
-                lines.append(f"🗺️ {esc(d['territory'])}")
+                lines.append(line("🗺️ <b>المناطق:</b>", ar.get("territory"), d["territory"]))
     else:
-        lines.append("💼 بدون خبرة سابقة")
+        lines.append("💼 <b>الخبرة:</b> بدون خبرة سابقة")
     if is_field_role(d):
-        lines.append("📊 مسح ميداني: " + ("نعم" if d.get("survey") else "لا"))
-        lines.append({"car": "🚗 إجازة سوق + سيارة", "licence": "🪪 إجازة سوق بدون سيارة"}.get(
-            d.get("licence"), "🚫 بدون إجازة سوق"))
-    lines.append(f"💪 {esc(', '.join(d.get('skills') or []))}" if d.get("skills") else "💪 مهارات قوية مختارة تلقائياً")
-    lines.append(f"🗣️ {esc(', '.join(d.get('languages') or []))}")
+        lines.append("📊 <b>مسح ميداني:</b> " + ("نعم" if d.get("survey") else "لا"))
+        lines.append("🚗 <b>السياقة:</b> " + {"car": "إجازة سوق + سيارة", "licence": "إجازة سوق بدون سيارة"}.get(
+            d.get("licence"), "بدون إجازة سوق"))
+    if d.get("skills"):
+        lines.append(line("💪 <b>المهارات:</b>", ar.get("skills"), d["skills"]))
+    else:
+        lines.append("💪 <b>المهارات:</b> <i>راح أختارلك أقوى المهارات تلقائياً</i>")
+    langs_ar = ["العربية (لغة أم)"]
+    if d.get("english") and d["english"] != "none":
+        langs_ar.append(f"الإنگليزية ({ar.get('english') or d['english']})")
+    langs_ar += ar.get("other_languages") or []
+    lines.append(line("🗣️ <b>اللغات:</b>", langs_ar, d.get("languages")))
     if d.get("courses"):
-        lines.append(f"📜 {esc(', '.join(d['courses']))}")
-    lines.append("📸 مع صورة" if sess.get("photo") else "📸 بدون صورة")
+        lines.append(line("📜 <b>الدورات:</b>", ar.get("courses"), d["courses"]))
+    lines.append("📸 <b>الصورة:</b> " + ("موجودة" if sess.get("photo") else "بدون صورة"))
     if d.get("_mt"):
-        lines.append("\n🔤 <i>بعض أجوبتك انترجمت تلقائياً للإنگليزي. إذا شي مو مضبوط اضغط ✏️ تعديل.</i>")
-    return "\n".join(lines)[:4000]
+        lines.append("\n🔤 <i>بعض أجوبتك انترجمت تلقائياً. إذا شي مو مضبوط اضغط ✏️ تعديل.</i>")
+    text = ""
+    for item in lines:  # Telegram allows 4096 characters; cut whole lines so no HTML tag is left open
+        if len(text) + len(item) > 3900:
+            text += "\n…"
+            break
+        text += item + "\n"
+    return text.strip()
 
 
 def show_summary(chat_id, sess):
@@ -555,6 +595,11 @@ def start_edit(chat_id, sess, group):
         d.pop("has_experience", None)
     sess["step"] = EDIT_START.get(group, group)
     ask(chat_id, sess["step"])
+
+
+def remember(d, key, value):
+    """Keeps the applicant's own words so the summary can show Arabic and English side by side."""
+    d.setdefault("_ar", {})[key] = value
 
 
 def note(d, how):
@@ -616,6 +661,7 @@ def add_extras(chat_id, sess, raw, prefix):
             continue  # already covered by the other questions
         note(d, how)
         added.append(tidy(en)[:40])
+        d.setdefault("_typed_" + prefix, []).append(item)
     d.setdefault(extra_key, []).extend(added)
     if d.get("_multi_mid"):
         tg("editMessageReplyMarkup", chat_id=chat_id, message_id=d["_multi_mid"],
@@ -685,6 +731,7 @@ def handle_cv_answer(chat_id, sess, msg):
             d["_name_check"] = True
         else:
             d["full_name"], d["_name_check"] = nice_name(text), False
+        remember(d, "name", text if has_ar(text) else "")
     elif step == "name_ok":
         if text == NAME_FIX:
             sess["step"] = "name_en"
@@ -705,8 +752,10 @@ def handle_cv_answer(chat_id, sess, msg):
         en = re.sub(r"(Representative|Specialist|Supervisor|Manager|Pharmacist)s\b", r"\1", en)
         if step == "job_title":
             d["job_title"] = en
+            remember(d, "job_title", text)
         else:
             job["title"] = en
+            job.setdefault("_ar", {})["title"] = text
     elif step == "phone":
         phone = re.sub(r"[^\d+\- ]", "", text.translate(AR_DIGITS)).strip(" -")
         if not 8 <= len(re.sub(r"\D", "", phone)) <= 15 or "+" in phone[1:]:
@@ -724,12 +773,14 @@ def handle_cv_answer(chat_id, sess, msg):
             en, how = place_en(text)
             note(d, how)
         d["city"] = tidy(en)[:60]
+        remember(d, "city", text)
     elif step == "degree_level":
         en = pick(DEGREE_BUTTONS, text) or next((v for ar, v in DEGREE_BUTTONS if norm(ar) in norm(text)), None)
         if not en:
             send(chat_id, "اختار شهادتك من الأزرار 👇", keyboard=KEYBOARDS["degree_level"])
             return
         d["degree_level"] = en
+        remember(d, "degree_level", next((ar for ar, v in DEGREE_BUTTONS if v == en), text))
         if en == HIGH_SCHOOL:
             d.update(specialty="High School", degree=HIGH_SCHOOL, university="")
         elif d.get("specialty") and d["specialty"] != "High School":
@@ -738,14 +789,17 @@ def handle_cv_answer(chat_id, sess, msg):
         en, how = specialty_en(text)
         note(d, how)
         d["specialty"] = tidy(en)[:80]
+        remember(d, "specialty", text)
         level = d.get("degree_level") or "Bachelor's Degree"
         d["degree"] = f"{level} in {d['specialty']}"
     elif step == "university":
         en, how = university_en(text)
         note(d, how)
         d["university"] = tidy(en)[:90]
+        remember(d, "university", text)
     elif step == "edu_status":
         val = text.translate(AR_DIGITS)
+        remember(d, "edu_status", f"متخرج سنة {val}" if re.fullmatch(r"\d{4}", val) else text)
         if re.fullmatch(r"(19[7-9]\d|20[0-3]\d)", val):
             d["edu_status"] = val
         else:
@@ -770,20 +824,23 @@ def handle_cv_answer(chat_id, sess, msg):
         else:
             en, how = company_en(text)
             note(d, how)
-            d.setdefault("experiences", []).append(
-                {"company": tidy(en)[:80], "title": "", "location": "", "duration": "", "duties": []})
+            d.setdefault("experiences", []).append({"company": tidy(en)[:80], "title": "", "location": "", "duration": "",
+                                                    "duties": [], "_ar": {"company": text}})
     elif step == "job_place":
         en, how = place_en(text)
         note(d, how)
         job["location"] = tidy(en)[:80]
+        job.setdefault("_ar", {})["location"] = text
     elif step == "job_duration":
         en = pick(DURATION_BUTTONS, text)
         if not en:
             en, how = duration_en(text)
             note(d, how)
         job["duration"] = en[:40]
+        job.setdefault("_ar", {})["duration"] = text
     elif step == "duties":
         job["duties"] = translate_lines(d, raw, 5, 170)
+        job.setdefault("_ar", {})["duties"] = [clean(x) for x in raw.splitlines() if clean(x)][:5]
     elif step == "more":
         if text not in (ADD_JOB, DONE_JOBS):
             send(chat_id, "اختار من الأزرار 👇", keyboard=KEYBOARDS["more"])
@@ -793,10 +850,12 @@ def handle_cv_answer(chat_id, sess, msg):
         en, how = products_en(text)
         note(d, how)
         d["products"] = tidy(en)[:120]
+        remember(d, "products", text)
     elif step == "territory":
         en, how = place_en(text)
         note(d, how)
         d["territory"] = tidy(en)[:120]
+        remember(d, "territory", text)
     elif step == "survey":
         if text not in (YES_SURVEY, NO_SURVEY):
             send(chat_id, "اختار من الأزرار 👇", keyboard=KEYBOARDS["survey"])
@@ -814,8 +873,10 @@ def handle_cv_answer(chat_id, sess, msg):
             send(chat_id, "اختار من الأزرار 👇", keyboard=KEYBOARDS["english"])
             return
         d["english"] = en
+        remember(d, "english", text)
     elif step == "courses":
         d["courses"] = [tidy(c) for c in translate_lines(d, raw, 8, 90)]
+        remember(d, "courses", [clean(x) for x in raw.splitlines() if clean(x)][:8])
     go_next(chat_id, sess)
 
 
@@ -1058,12 +1119,16 @@ def handle_callback(cq):
                 shown = [ar for k, ar, _ in options if k in selected] + ((d.get(extra_key) or []) if extra_key else [])
                 tg("editMessageText", chat_id=chat_id, message_id=mid,
                    text=(msg.get("text") or "") + "\n\n✅ " + ("، ".join(shown) if shown else "تم"))
+                ar_chosen = [ar for k, ar, _ in options if k in selected] + (d.get("_typed_" + prefix) or [])
                 if prefix == "c":
                     d["customers"] = chosen
+                    remember(d, "customers", ar_chosen)
                 elif prefix == "s":
                     d["skills"] = chosen + d.get("skills_extra", [])
+                    remember(d, "skills", ar_chosen)
                 else:
                     d["other_languages"] = chosen + d.get("langs_extra", [])
+                    remember(d, "other_languages", ar_chosen)
                 go_next(chat_id, sess)
             elif any(k == key for k, _, _ in options):
                 selected.remove(key) if key in selected else selected.append(key)
