@@ -3,10 +3,8 @@ services:
     name: cv-bot
     runtime: python
     plan: free
-    region: frankfurt
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn app:app --workers 1 --threads 8 --timeout 120
-    healthCheckPath: /
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.7
