@@ -21,6 +21,7 @@ import re
 import threading
 import time
 from collections import deque
+from concurrent.futures import ThreadPoolExecutor
 
 import requests
 from flask import Flask, abort, request
@@ -272,14 +273,50 @@ def split_list(text):
     return [clean(p).strip(" .-•*") for p in parts if clean(p).strip(" .-•*")]
 
 
+TYPOS = {
+    "unversity": "University", "univercity": "University", "universty": "University", "univesity": "University",
+    "uinversity": "University", "universiti": "University", "collage": "College", "colledge": "College",
+    "engeneering": "Engineering", "enginering": "Engineering", "engineerin": "Engineering", "engineeing": "Engineering",
+    "pharmcy": "Pharmacy", "pharmasy": "Pharmacy", "pharmacey": "Pharmacy", "managment": "Management",
+    "buisness": "Business", "bussiness": "Business", "busines": "Business", "adminstration": "Administration",
+    "administation": "Administration", "represntative": "Representative", "representitive": "Representative",
+    "representive": "Representative", "bachelors": "Bachelor's", "bachlor": "Bachelor", "bachelore": "Bachelor",
+    "marketting": "Marketing", "medecal": "Medical", "medicl": "Medical", "biologi": "Biology", "chemestry": "Chemistry",
+}
+SMALL_WORDS = {"of", "in", "and", "for", "the", "at", "to", "on", "&"}
+LANGUAGES = {"arabic", "english", "turkish", "kurdish", "persian", "farsi", "french", "german", "spanish", "russian",
+             "italian", "chinese", "hindi", "urdu", "japanese", "korean", "armenian", "turkmen", "syriac", "hebrew"}
+
+
 def tidy(text):
-    return text.title() if text.islower() else text
+    """Tidies English the applicant typed: fixes common typos and capitalizes lowercase words."""
+    words = []
+    for i, word in enumerate(clean(text).split(" ")):
+        core = word.rstrip(".,;:")
+        tail = word[len(core):]
+        if core.lower() in TYPOS:
+            core = TYPOS[core.lower()]
+        elif core.islower() and (i == 0 or core not in SMALL_WORDS):
+            core = "-".join(p[:1].upper() + p[1:] for p in core.split("-"))
+        words.append(core + tail)
+    return " ".join(words)
 
 
 def parse_language(item):
     item = clean(item)
     m = re.match(r"^([A-Za-z ]+?)\s*(?:[:\-–(]\s*)([A-Za-z ]+?)\)?$", item)
     return f"{m.group(1).strip().title()}: {m.group(2).strip().title()}" if m else tidy(item)
+
+
+def parse_languages(raw):
+    items = []
+    for part in split_list(raw):
+        words = part.lower().split()
+        if len(words) > 1 and all(w in LANGUAGES for w in words):  # "Arabic English Turkish"
+            items += [w.title() for w in words]
+        else:
+            items.append(parse_language(part))
+    return [x[:40] for x in items][:6] or ["Arabic: Native"]
 
 
 def parse_job(text):
@@ -300,6 +337,7 @@ def parse_job(text):
     job["duration"] = re.sub(r"(\d)\s*(months?|years?|weeks?)", r"\1 \2", job["duration"], flags=re.I)
     for k in ("company", "title", "location"):
         job[k] = tidy(job[k])
+    job["title"] = re.sub(r"(Representative|Specialist|Supervisor|Manager|Pharmacist)s\b", r"\1", job["title"])
     return job
 
 
@@ -568,7 +606,7 @@ def handle_cv_answer(chat_id, sess, msg):
     elif step == "skills":
         d["skills"] = [tidy(s)[:40] for s in split_list(raw)][:12]
     elif step == "languages":
-        d["languages"] = [parse_language(s)[:40] for s in split_list(raw)][:6] or ["Arabic: Native"]
+        d["languages"] = parse_languages(raw)
     elif step == "courses":
         d["courses"] = [clean(c)[:90] for c in raw.splitlines() if clean(c)][:8]
     go_next(chat_id, sess)
@@ -616,7 +654,8 @@ def payment_message():
 
 def finish_cv(chat_id, sess):
     d = sess["data"]
-    send(chat_id, "⏳ دقيقة، جاي أجهز السي في مالتك...", remove_keyboard=True)
+    send(chat_id, "⏳ لحظات، جاي أجهز السي في مالتك...", remove_keyboard=True)
+    tg("sendChatAction", chat_id=chat_id, action="upload_document")
     try:
         pdf = build_cv(d, sess.get("photo"))
     except Exception:
@@ -773,7 +812,7 @@ def handle_callback(cq):
     if data[:2] in ("u:", "e:", "c:", "a:"):
         if not sess:
             drop_buttons()
-            send(chat_id, "انتهت الجلسة ⌛ اكتب /start حتى نبدي من جديد")
+            send(chat_id, "⌛ هذا الزر من رسالة قديمة.\nاكتب /start إذا تريد تبدي من جديد.")
             return
         if data == "u:send" and sess["step"] == "confirm":
             drop_buttons()
@@ -929,6 +968,26 @@ def health():
     return "CV bot is running ✅"
 
 
+workers = ThreadPoolExecutor(max_workers=6)
+chat_locks = {}
+
+
+def update_chat_id(upd):
+    msg = upd.get("message") or (upd.get("callback_query") or {}).get("message") or {}
+    return (msg.get("chat") or {}).get("id")
+
+
+def process(upd):
+    chat_id = update_chat_id(upd)
+    with lock:
+        chat_lock = chat_locks.setdefault(chat_id, threading.Lock())
+    try:
+        with chat_lock:  # a person's taps/messages are handled in order (no double CVs)
+            handle_update(upd)
+    except Exception:
+        log.exception("update failed")
+
+
 @app.post(f"/webhook/{SECRET}")
 def webhook():
     if request.headers.get("X-Telegram-Bot-Api-Secret-Token") != SECRET:
@@ -939,10 +998,12 @@ def webhook():
             return "ok"
         seen_updates.append(upd.get("update_id"))
         cleanup()
-    try:
-        handle_update(upd)
-    except Exception:
-        log.exception("update failed")
+        if len(chat_locks) > 5000:
+            chat_locks.clear()
+    if env("SYNC_UPDATES") == "1":  # used by the tests
+        process(upd)
+    else:
+        workers.submit(process, upd)
     return "ok"
 
 
