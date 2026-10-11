@@ -11,6 +11,7 @@ Environment variables (Render -> Environment). Only BOT_TOKEN is required:
     PRICE_IQD         CV price, e.g. 25000. 0 or empty = free service
     QI_CARD_NAME      name on the Qi Card that receives payments
     QI_CARD_NUMBER    the Qi Card number shown to applicants
+    MYMEMORY_EMAIL    optional; raises the free translation limit (5,000 -> 50,000 characters a day)
     PUBLIC_URL        only needed outside Render (Render provides RENDER_EXTERNAL_URL)
 """
 import hashlib
@@ -27,6 +28,8 @@ import requests
 from flask import Flask, abort, request
 
 from cv_pdf import build_cv, edu_status_text, format_phone, is_field_role, is_student, nice_name
+from translate import (company_en, duration_en, has_ar, language_en, name_en, norm, phrase_en, place_en,
+                       products_en, sentence_en, specialty_en, title_en, transliterate, university_en)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("cvbot")
@@ -61,18 +64,44 @@ YES_EXP, NO_EXP = "✅ عندي خبرة", "🎓 ما عندي خبرة"
 ADD_JOB, DONE_JOBS = "➕ أضيف شغل ثاني", "✅ لا، كمّل"
 YES_SURVEY, NO_SURVEY = "✅ نعم سويت", "❌ لا"
 LIC_CAR, LIC_ONLY, LIC_NONE = "🚗 عندي إجازة سوق وسيارة", "🪪 عندي إجازة بدون سيارة", "❌ ما عندي إجازة سوق"
+NAME_OK, NAME_FIX = "✅ صحيح", "✏️ أكتبه بالإنگليزي بنفسي"
 MAX_JOBS = 6
-ENGLISH_ONLY = "⚠️ رجاءً اكتب الجواب <b>باللغة الإنگليزية</b> حتى يطلع السي في احترافي."
 
-JOB_TITLES = [
-    ["Medical Representative", "Medical Sales Representative"],
-    ["Sales Representative", "Sales Supervisor"],
-    ["Marketing Specialist", "Pharmacist"],
-    ["Laboratory Specialist"],
-]
-STUDENT_STAGES = [["2nd-Year Student", "3rd-Year Student"], ["4th-Year Student", "Final-Year Student"]]
-CUSTOMER_TYPES = [("doc", "Doctors", "الأطباء"), ("cli", "Clinics", "العيادات"), ("pha", "Pharmacies", "الصيدليات"),
-                  ("hos", "Hospitals", "المستشفيات"), ("shp", "Shops & Markets", "المحلات والأسواق")]
+# (Arabic button, English value on the CV)
+TITLE_BUTTONS = [("مندوب طبي", "Medical Representative"), ("مندوب مبيعات طبي", "Medical Sales Representative"),
+                 ("مندوب مبيعات", "Sales Representative"), ("مشرف مبيعات", "Sales Supervisor"),
+                 ("أخصائي تسويق", "Marketing Specialist"), ("صيدلاني", "Pharmacist"),
+                 ("أخصائي مختبر", "Laboratory Specialist")]
+CITY_BUTTONS = [("بغداد", "Baghdad"), ("البصرة", "Basra"), ("النجف", "Najaf"), ("كربلاء", "Karbala"),
+                ("بابل", "Babylon"), ("ميسان", "Maysan"), ("ذي قار", "Dhi Qar"), ("الديوانية", "Diwaniyah"),
+                ("واسط", "Wasit"), ("المثنى", "Al-Muthanna"), ("ديالى", "Diyala"), ("الأنبار", "Anbar"),
+                ("نينوى", "Nineveh"), ("صلاح الدين", "Salahuddin"), ("كركوك", "Kirkuk"), ("أربيل", "Erbil")]
+DEGREE_BUTTONS = [("بكالوريوس", "Bachelor's Degree"), ("دبلوم", "Diploma"), ("ماجستير", "Master's Degree"),
+                  ("دكتوراه", "PhD"), ("إعدادية", "High School Diploma")]
+STAGE_BUTTONS = [("طالب مرحلة ثانية", "2nd-Year Student"), ("طالب مرحلة ثالثة", "3rd-Year Student"),
+                 ("طالب مرحلة رابعة", "4th-Year Student"), ("طالب مرحلة أخيرة", "Final-Year Student")]
+DURATION_BUTTONS = [("٣ أشهر", "3 months"), ("٦ أشهر", "6 months"), ("سنة", "1 year"), ("سنتين", "2 years"),
+                    ("٣ سنوات", "3 years"), ("أكثر من ٣ سنوات", "3+ years")]
+ENGLISH_LEVELS = [("ممتاز", "Fluent"), ("جيد جداً", "Very Good"), ("جيد", "Good"), ("متوسط", "Intermediate"),
+                  ("مبتدئ", "Basic"), ("ما أعرف إنگليزي", "none")]
+# (key, Arabic button, English value)
+CUSTOMER_TYPES = [("doc", "الأطباء", "Doctors"), ("cli", "العيادات", "Clinics"), ("pha", "الصيدليات", "Pharmacies"),
+                  ("hos", "المستشفيات", "Hospitals"), ("shp", "المحلات والأسواق", "Shops & Markets"),
+                  ("com", "الشركات", "Companies")]
+SKILL_OPTIONS = [("com", "مهارات التواصل", "Strong Communication Skills"), ("neg", "التفاوض", "Negotiation Skills in Sales"),
+                 ("per", "الإقناع وإغلاق البيع", "Persuasion & Closing Deals"), ("rel", "بناء العلاقات", "Relationship Building"),
+                 ("cus", "خدمة العملاء", "Customer Service Skills"), ("pre", "العرض والتقديم", "Presentation Skills"),
+                 ("team", "العمل الجماعي", "Teamwork Collaboration"), ("time", "إدارة الوقت", "Time Management"),
+                 ("press", "العمل تحت الضغط", "Working Under Pressure"), ("prob", "حل المشكلات", "Problem-Solving Skills"),
+                 ("fast", "سرعة التعلم", "Fast Learning"), ("off", "برامج الأوفيس", "Microsoft Office"),
+                 ("soc", "التسويق بالسوشيال ميديا", "Social Media Marketing"), ("det", "الدقة بالتفاصيل", "Detail-Oriented")]
+OTHER_LANGS = [("ku", "الكردية", "Kurdish"), ("tr", "التركية", "Turkish"), ("fa", "الفارسية", "Persian"),
+               ("fr", "الفرنسية", "French"), ("de", "الألمانية", "German"), ("tk", "التركمانية", "Turkmen")]
+MULTI = {  # prefix -> (step, options, selection key, extras key, label when nothing is chosen)
+    "c": ("customers", CUSTOMER_TYPES, "_cust_sel", None, "⏭️ تخطي"),
+    "s": ("skills", SKILL_OPTIONS, "_skills_sel", "skills_extra", "✨ اختارلي أقوى المهارات"),
+    "l": ("other_langs", OTHER_LANGS, "_langs_sel", "langs_extra", "⏭️ لا، بس هذني"),
+}
 
 MENU = [
     [{"text": "📝 إنشاء سيرة ذاتية CV", "callback_data": "m:cv"}],
@@ -88,35 +117,38 @@ WELCOME = (
 )
 
 QUESTIONS = {  # step -> (question, optional?)
-    "name": ("اسمك الثلاثي بالإنگليزي\nمثال: <code>Ali Hassan Kareem</code>", False),
-    "job_title": ("شنو الوظيفة اللي تريد تقدم عليها؟\nاختار من الأزرار، أو اكتبها بالإنگليزي", False),
-    "phone": ("رقم هاتفك الفعّال\nمثال: <code>07701234567</code>", False),
-    "email": ("الإيميل\nمثال: <code>ali.hassan@gmail.com</code>\nإذا ما عندك اضغط تخطي", True),
-    "city": ("المدينة اللي تسكن بيها بالإنگليزي\nمثال: <code>Baghdad</code>", False),
-    "university": ("اسم الجامعة أو الكلية أو المعهد بالإنگليزي\nمثال: <code>University of Baghdad</code>", False),
-    "degree": ("الشهادة والتخصص بالإنگليزي\nمثال: <code>Bachelor's Degree in Pharmacy</code>", False),
-    "edu_status": ("إذا متخرج اكتب <b>سنة التخرج</b>، مثال: <code>2021</code>\n"
-                   "وإذا بعدك طالب اختار مرحلتك من الأزرار 👇", False),
-    "has_exp": ("عندك خبرة شغل سابقة؟ (حتى لو كانت شهر واحد)", False),
-    "job": ("اكتب الشغل بهذا الشكل:\n<code>Company | Job Title | City, Area | Duration</code>\n\n"
-            "مثال:\n<code>Pioneer Pharma | Medical Representative | Baghdad, Al-Mansour | 2 years</code>", False),
-    "duties": ("شنو كانت مهامك بهذا الشغل؟ اكتب 2 أو 3 مهام، <b>كل مهمة بسطر</b>\n\n"
-               "مثال:\n<code>Visiting doctors and pharmacies in Al-Mansour area\n"
-               "Achieving monthly sales targets</code>\n\n"
-               "إذا تريد أكتبلك مهام قوية مناسبة جاهزة اضغط تخطي", True),
+    "name": ("شنو اسمك الثلاثي؟ ✍️\nمثال: <code>علي حسن كريم</code>", False),
+    "name_ok": ("", False),
+    "name_en": ("اكتب اسمك بالحروف الإنگليزية مثل ما تريده يطلع بالسي في\nمثال: <code>Ali Hassan Kareem</code>", False),
+    "job_title": ("شنو الوظيفة اللي تريد تقدم عليها؟\nاختار من الأزرار أو اكتبها", False),
+    "phone": ("رقم هاتفك 📞\nمثال: <code>07701234567</code>", False),
+    "email": ("الإيميل ✉️\nمثال: <code>ali.hassan@gmail.com</code>\nإذا ما عندك اضغط تخطي", True),
+    "city": ("وين تسكن؟ اختار محافظتك أو اكتبها 📍", False),
+    "degree_level": ("شنو شهادتك؟ 🎓", False),
+    "specialty": ("شنو تخصصك؟\nمثال: <code>صيدلة</code> أو <code>تحليلات مرضية</code> أو <code>إدارة أعمال</code>", False),
+    "university": ("اسم الجامعة أو الكلية أو المعهد\nمثال: <code>جامعة بغداد</code>", False),
+    "edu_status": ("إذا متخرج اكتب <b>سنة التخرج</b>، مثل <code>2021</code>\nوإذا بعدك طالب اختار مرحلتك 👇", False),
+    "has_exp": ("عندك خبرة شغل سابقة؟ (حتى لو شهر واحد)", False),
+    "job_company": ("💼 اسم الشركة أو المكان اللي اشتغلت بيه\nإذا تعرف اسمها بالإنگليزي أحسن، وإذا لا اكتبه بالعربي\n"
+                    "مثال: <code>Pioneer</code> أو <code>صيدلية النور</code>", False),
+    "job_role": ("شنو كان عنوانك الوظيفي بهذا الشغل؟\nاختار أو اكتبه", False),
+    "job_place": ("وين كان الشغل؟ (المدينة أو المنطقة)\nمثال: <code>بغداد - المنصور</code>", True),
+    "job_duration": ("شگد اشتغلت بيه؟ ⏳\nاختار، أو اكتب مثل <code>8 أشهر</code> أو <code>2021 - حاليا</code>", True),
+    "duties": ("شنو كانت مهامك بهذا الشغل؟ 📝\nاكتب كل مهمة بسطر، بالعربي عادي\n\n"
+               "مثال:\n<code>زيارة الأطباء والصيدليات بمنطقة المنصور\nتحقيق التارگت الشهري</code>\n\n"
+               "إذا تريد أكتبلك مهام قوية جاهزة اضغط تخطي", True),
     "more": ("تريد تضيف شغل ثاني؟", False),
     "customers": ("منو الزبائن اللي تعاملت وياهم بشغلك؟\nاختار كل اللي ينطبق، وبعدها اضغط <b>✔️ تم</b>", True),
-    "products": ("شنو المنتجات أو التخصصات اللي سوّقتها؟ بالإنگليزي\n"
-                 "مثال: <code>Cardiology, Antibiotics, Dermal Fillers</code>\nإذا ما ينطبق اضغط تخطي", True),
-    "territory": ("شنو المدن أو المناطق اللي غطيتها بشغلك؟ بالإنگليزي\n"
-                  "مثال: <code>Baghdad (Karkh, Mansour), Babylon</code>\nإذا ما ينطبق اضغط تخطي", True),
-    "survey": ("سويت قبل <b>مسح ميداني (Market Survey)</b> للأطباء أو العيادات أو الصيدليات بمدينتك؟", False),
-    "licence": ("عندك إجازة سوق وسيارة؟", False),
-    "skills": ("اكتب مهاراتك بالإنگليزي وافصل بينها بفاصلة\n"
-               "مثال: <code>Teamwork, Time Management, Negotiation Skills</code>\n\n"
-               "إذا تريد أختارلك 12 مهارة قوية مناسبة لوظيفتك اضغط تخطي", True),
-    "languages": ("اللغات ومستواك بيها\nمثال: <code>Arabic: Native, English: Good</code>", True),
-    "courses": ("الدورات والشهادات، كل وحدة بسطر\nمثال: <code>Professional Selling Skills - 2023</code>\n\n"
+    "products": ("شنو المنتجات أو التخصصات اللي سوّقتها؟ 💊\nمثال: <code>فلرات، بوتوكس</code> أو <code>مضادات حيوية</code>\n"
+                 "إذا ما ينطبق اضغط تخطي", True),
+    "territory": ("شنو المناطق اللي غطيتها بشغلك؟ 🗺️\nمثال: <code>الكرخ والمنصور</code>\nإذا ما ينطبق اضغط تخطي", True),
+    "survey": ("سويت قبل <b>مسح ميداني</b> للأطباء أو العيادات أو الصيدليات بمدينتك؟ 📊", False),
+    "licence": ("عندك إجازة سوق وسيارة؟ 🚗", False),
+    "skills": ("اختار مهاراتك 💪 (تگدر تختار أكثر من وحدة)\nإذا عندك مهارة ثانية اكتبها برسالة\n"
+               "وبعدها اضغط <b>✔️ تم</b>", True),
+    "english": ("شگد مستواك باللغة الإنگليزية؟ 🗣️", False),
+    "other_langs": ("تعرف لغات ثانية غير العربي والإنگليزي؟\nاختار، أو اكتبها برسالة، وبعدها اضغط <b>✔️ تم</b>", True),
+    "courses": ("عندك دورات أو شهادات؟ 📜\nاكتب كل وحدة بسطر\nمثال: <code>دورة مهارات البيع - 2023</code>\n\n"
                 "إذا ما عندك اضغط تخطي", True),
     "photo": ("دز صورة شخصية رسمية واضحة 📸، أو اضغط تخطي", True),
     # job ad
@@ -131,13 +163,17 @@ QUESTIONS = {  # step -> (question, optional?)
 }
 EDIT_FIELDS = [  # (label, group)
     ("الاسم", "name"), ("الوظيفة", "job_title"), ("الهاتف", "phone"), ("الإيميل", "email"),
-    ("المدينة", "city"), ("الجامعة", "university"), ("الشهادة", "degree"), ("التخرج/المرحلة", "edu_status"),
-    ("الخبرة", "exp"), ("المسح الميداني", "survey"), ("إجازة السوق", "licence"),
-    ("المهارات", "skills"), ("اللغات", "languages"), ("الدورات", "courses"), ("الصورة", "photo"),
+    ("المدينة", "city"), ("الدراسة", "edu"), ("الخبرة", "exp"), ("المسح الميداني", "survey"),
+    ("إجازة السوق", "licence"), ("المهارات", "skills"), ("اللغات", "langs"), ("الدورات", "courses"),
+    ("الصورة", "photo"),
 ]
-EXP_GROUP = {"has_exp", "job", "duties", "more", "customers", "products", "territory"}
-EDIT_CONTINUES = {"exp": EXP_GROUP, "field_extra": {"survey", "licence"}}
+EXP_GROUP = {"has_exp", "job_company", "job_role", "job_place", "job_duration", "duties", "more",
+             "customers", "products", "territory"}
+EDIT_CONTINUES = {"name": {"name_ok"}, "edu": {"specialty", "university", "edu_status"}, "exp": EXP_GROUP,
+                  "langs": {"other_langs"}, "field_extra": {"survey", "licence"}}
+EDIT_START = {"edu": "degree_level", "exp": "has_exp", "langs": "english"}
 AD_ORDER = ["ad_company", "ad_title", "ad_city", "ad_req", "ad_resp", "ad_contact"]
+HIGH_SCHOOL = "High School Diploma"
 
 # ================================================================ sessions
 sessions = {}  # chat_id -> {"mode", "step", "data", "photo", "t", "editing", "admin_msg"}
@@ -159,41 +195,44 @@ def cleanup():
 
 
 def cv_steps(d):
-    """The questions this applicant gets, in order (used for 'question X of N')."""
+    """The numbered questions this applicant gets, in order (used for 'question X of N')."""
     field = is_field_role(d) if d.get("job_title") else True
     exp = d.get("has_experience", True)
-    steps = ["name", "job_title", "phone", "email", "city", "university", "degree", "edu_status", "has_exp"]
+    steps = ["name", "job_title", "phone", "email", "city", "degree_level"]
+    if d.get("degree_level") != HIGH_SCHOOL:
+        steps += ["specialty", "university"]
+    steps += ["edu_status", "has_exp"]
     if exp:
-        steps.append("job")
+        steps.append("job_company")
         if field:
             steps += ["customers", "products", "territory"]
     if field:
         steps += ["survey", "licence"]
-    return steps + ["skills", "languages", "courses", "photo"]
+    return steps + ["skills", "english", "other_langs", "courses", "photo"]
 
 
 def next_step(sess, step):
     d = sess["data"]
     field = is_field_role(d)
-    jobs = len(d.get("experiences") or [])
     after_jobs = "customers" if field else "skills"
+    if step == "name":
+        return "name_ok" if d.get("_name_check") else "job_title"
+    if step == "degree_level":
+        return "edu_status" if d.get("degree_level") == HIGH_SCHOOL else "specialty"
     if step == "has_exp":
-        return "job" if d.get("has_experience") else ("survey" if field else "skills")
-    if step == "job":
-        return "duties"
+        return "job_company" if d.get("has_experience") else ("survey" if field else "skills")
     if step == "duties":
-        return "more" if jobs < MAX_JOBS else after_jobs
+        return "more" if len(d.get("experiences") or []) < MAX_JOBS else after_jobs
     if step == "more":
-        return "job" if d.pop("_add_more", False) else after_jobs
-    if step == "territory":
-        return "survey"
-    if step == "licence":
-        return "skills"
-    order = ["name", "job_title", "phone", "email", "city", "university", "degree", "edu_status", "has_exp",
-             None, "customers", "products", "territory", None, "survey", "licence", None,
-             "skills", "languages", "courses", "photo"]
-    i = order.index(step)
-    return next((s for s in order[i + 1:] if s), "confirm")
+        return "job_company" if d.pop("_add_more", False) else after_jobs
+    return {
+        "name_ok": "job_title", "name_en": "job_title", "job_title": "phone", "phone": "email", "email": "city",
+        "city": "degree_level", "specialty": "university", "university": "edu_status", "edu_status": "has_exp",
+        "job_company": "job_role", "job_role": "job_place", "job_place": "job_duration", "job_duration": "duties",
+        "customers": "products", "products": "territory", "territory": "survey", "survey": "licence",
+        "licence": "skills", "skills": "english", "english": "other_langs", "other_langs": "courses",
+        "courses": "photo", "photo": "confirm",
+    }[step]
 
 
 # ============================================================ telegram API
@@ -308,17 +347,6 @@ def parse_language(item):
     return f"{m.group(1).strip().title()}: {m.group(2).strip().title()}" if m else tidy(item)
 
 
-def parse_languages(raw):
-    items = []
-    for part in split_list(raw):
-        words = part.lower().split()
-        if len(words) > 1 and all(w in LANGUAGES for w in words):  # "Arabic English Turkish"
-            items += [w.title() for w in words]
-        else:
-            items.append(parse_language(part))
-    return [x[:40] for x in items][:6] or ["Arabic: Native"]
-
-
 def parse_job(text):
     text = clean(text)
     parts = [p.strip() for p in re.split(r"\s*\|\s*", text) if p.strip()]
@@ -367,7 +395,7 @@ def start_cv(chat_id, user):
              if PAID else "")
     send(chat_id, "📝 <b>إنشاء سيرة ذاتية</b>\n\n"
                   "راح أسألك أسئلة قليلة، سؤال بعد سؤال.\n"
-                  "🔤 <b>جاوب على الأسئلة باللغة الإنگليزية</b> حتى يطلع السي في احترافي.\n"
+                  "✍️ جاوب <b>بالعربي عادي</b>، وأنا أحوّل كلشي للإنگليزي بالسي في ✨\n"
                   f"✏️ بالأخير تگدر تراجع معلوماتك وتعدّلها.{price}\n"
                   "❌ للإلغاء بأي وقت اكتب /cancel", remove_keyboard=True)
     ask(chat_id, "name")
@@ -379,32 +407,61 @@ def progress(sess, step):
     return f"<b>السؤال {steps.index(step) + 1} من {len(steps)}</b>\n" if step in steps else ""
 
 
-def customers_keyboard(selected):
-    rows = [[{"text": ("✅ " if key in selected else "▫️ ") + ar, "callback_data": f"c:{key}"}]
-            for key, _, ar in CUSTOMER_TYPES]
-    rows.append([{"text": "✔️ تم" if selected else "⏭️ تخطي", "callback_data": "c:done"}])
+def rows_of(labels, n):
+    return [labels[i:i + n] for i in range(0, len(labels), n)]
+
+
+KEYBOARDS = {
+    "job_title": rows_of([ar for ar, _ in TITLE_BUTTONS], 2),
+    "job_role": rows_of([ar for ar, _ in TITLE_BUTTONS], 2),
+    "city": rows_of([ar for ar, _ in CITY_BUTTONS], 3),
+    "degree_level": rows_of([ar for ar, _ in DEGREE_BUTTONS], 3),
+    "edu_status": rows_of([ar for ar, _ in STAGE_BUTTONS], 2),
+    "job_duration": rows_of([ar for ar, _ in DURATION_BUTTONS], 3),
+    "english": rows_of([ar for ar, _ in ENGLISH_LEVELS], 3),
+    "has_exp": [[YES_EXP], [NO_EXP]], "more": [[ADD_JOB], [DONE_JOBS]], "survey": [[YES_SURVEY, NO_SURVEY]],
+    "licence": [[LIC_CAR], [LIC_ONLY], [LIC_NONE]], "name_ok": [[NAME_OK], [NAME_FIX]],
+}
+
+
+def multi_keyboard(prefix, d):
+    _, options, sel_key, extra_key, empty_label = MULTI[prefix]
+    selected = d.get(sel_key) or []
+    rows, row = [], []
+    for key, ar, _ in options:
+        row.append({"text": ("✅ " if key in selected else "▫️ ") + ar, "callback_data": f"{prefix}:{key}"})
+        if len(row) == 2:
+            rows.append(row)
+            row = []
+    if row:
+        rows.append(row)
+    anything = selected or (extra_key and d.get(extra_key))
+    rows.append([{"text": "✔️ تم" if anything else empty_label, "callback_data": f"{prefix}:done"}])
     return rows
 
 
 def ask(chat_id, step):
     sess = sessions.get(chat_id) or {}
+    d = sess.get("data") or {}
     question, optional = QUESTIONS[step]
+    if step == "name_ok":
+        question = f"اسمك بالإنگليزي راح ينكتب هيچ:\n\n<b>{esc(d.get('full_name'))}</b>\n\nصحيح؟"
     if sess.get("mode") == "cv":
-        jobs = len(sess["data"].get("experiences") or [])
-        if step == "job":
-            question = (f"💼 <b>الشغل رقم {jobs + 1}</b>\n" if jobs else progress(sess, step)) + question
-        elif step not in ("duties", "more"):
+        jobs = len(d.get("experiences") or [])
+        if step == "job_company" and jobs:
+            question = f"💼 <b>الشغل رقم {jobs + 1}</b>\n" + question
+        else:
             question = progress(sess, step) + question
-    keyboards = {
-        "job_title": JOB_TITLES, "edu_status": STUDENT_STAGES, "has_exp": [[YES_EXP], [NO_EXP]],
-        "more": [[ADD_JOB], [DONE_JOBS]], "survey": [[YES_SURVEY, NO_SURVEY]],
-        "licence": [[LIC_CAR], [LIC_ONLY], [LIC_NONE]],
-    }
-    if step == "customers":
-        sess["data"]["customers"] = []
-        send(chat_id, question, inline=customers_keyboard([]))
-    elif step in keyboards:
-        send(chat_id, question, keyboard=keyboards[step])
+    prefix = next((p for p, spec in MULTI.items() if spec[0] == step), None)
+    if prefix:
+        _, _, sel_key, extra_key, _ = MULTI[prefix]
+        d[sel_key] = []
+        if extra_key:
+            d[extra_key] = []
+        res = send(chat_id, question, inline=multi_keyboard(prefix, d))
+        d["_multi_mid"] = (res.get("result") or {}).get("message_id")
+    elif step in KEYBOARDS:
+        send(chat_id, question, keyboard=KEYBOARDS[step] + ([[SKIP]] if optional else []))
     elif optional:
         send(chat_id, question, keyboard=[[SKIP]])
     else:
@@ -427,18 +484,30 @@ def go_next(chat_id, sess):
         ask(chat_id, nxt)
 
 
+def refresh_languages(d):
+    langs = ["Arabic: Native"]
+    if d.get("english") and d["english"] != "none":
+        langs.append(f"English: {d['english']}")
+    for lang in d.get("other_languages") or []:
+        if lang.split(":")[0].strip().lower() not in ("arabic", "english"):
+            langs.append(lang)
+    d["languages"] = langs[:6]
+
+
 def summary_text(sess):
     d = sess["data"]
-    lines = ["📋 <b>راجع معلوماتك قبل الإرسال:</b>\n",
+    refresh_languages(d)
+    lines = ["📋 <b>راجع معلوماتك</b>\nهيچ راح تنكتب بالسي في 👇\n",
              f"👤 {esc(d.get('full_name'))}", f"🎯 {esc(d.get('job_title'))}", f"📞 {esc(d.get('phone'))}"]
     if d.get("email"):
         lines.append(f"✉️ {esc(d['email'])}")
-    lines += [f"📍 {esc(d.get('city'))}",
-              f"🎓 {esc(d.get('university'))} | {esc(d.get('degree'))} | {esc(edu_status_text(d))}"]
+    edu = " | ".join(esc(x) for x in (d.get("university"), d.get("degree"), edu_status_text(d)) if x)
+    lines += [f"📍 {esc(d.get('city'))}", f"🎓 {edu}"]
     if d.get("has_experience"):
         for e in d.get("experiences") or []:
             bits = " | ".join(esc(x) for x in (e.get("title"), e.get("location"), e.get("duration")) if x)
             lines.append(f"💼 {esc(e['company'])}" + (f" — {bits}" if bits else ""))
+            lines += [f"      • {esc(x)}" for x in (e.get("duties") or [])[:4]]
         if is_field_role(d):
             if d.get("customers"):
                 lines.append(f"🩺 {esc(', '.join(d['customers']))}")
@@ -457,7 +526,9 @@ def summary_text(sess):
     if d.get("courses"):
         lines.append(f"📜 {esc(', '.join(d['courses']))}")
     lines.append("📸 مع صورة" if sess.get("photo") else "📸 بدون صورة")
-    return "\n".join(lines)
+    if d.get("_mt"):
+        lines.append("\n🔤 <i>بعض أجوبتك انترجمت تلقائياً للإنگليزي. إذا شي مو مضبوط اضغط ✏️ تعديل.</i>")
+    return "\n".join(lines)[:4000]
 
 
 def show_summary(chat_id, sess):
@@ -482,10 +553,77 @@ def start_edit(chat_id, sess, group):
     if group == "exp":
         d.update(experiences=[], customers=[], products="", territory="")
         d.pop("has_experience", None)
-        sess["step"] = "has_exp"
-    else:
-        sess["step"] = group
+    sess["step"] = EDIT_START.get(group, group)
     ask(chat_id, sess["step"])
+
+
+def note(d, how):
+    """Marks the application when machine translation or transliteration was used (the admin is told)."""
+    if how in ("mt", "translit", "failed"):
+        d["_mt"] = True
+
+
+def pick(options, text):
+    """Arabic button label (or the English value itself) -> English value."""
+    key = norm(text)
+    for ar, en in options:
+        if text in (ar, en) or key == norm(ar) or text.lower() == en.lower():
+            return en
+    return None
+
+
+ORDINALS = {"اولى": "1st", "الاولى": "1st", "اول": "1st", "1": "1st", "ثانيه": "2nd", "الثانيه": "2nd", "ثاني": "2nd",
+            "2": "2nd", "ثالثه": "3rd", "الثالثه": "3rd", "ثالث": "3rd", "3": "3rd", "رابعه": "4th", "الرابعه": "4th",
+            "رابع": "4th", "4": "4th", "خامسه": "5th", "الخامسه": "5th", "خامس": "5th", "5": "5th", "سادسه": "6th",
+            "السادسه": "6th", "سادس": "6th", "6": "6th", "اخيره": "Final", "الاخيره": "Final", "اخير": "Final"}
+
+
+def stage_from_text(text):
+    if not has_ar(text):
+        return tidy(text)[:40] if re.search(r"student|year|stage", text, re.I) else None
+    words = norm(text).split()
+    if not any(w in ("طالب", "طالبه", "مرحله", "المرحله", "سنه", "صف", "كورس") for w in words):
+        return None
+    stage = next((ORDINALS[w] for w in words if w in ORDINALS), None)
+    return f"{stage}-Year Student" if stage else "University Student"
+
+
+def translate_lines(d, raw, limit, width):
+    out = []
+    lines = [clean(x).strip(" -•*") for x in raw.splitlines() if clean(x).strip(" -•*")]
+    if len(lines) == 1 and len(split_list(raw)) > 1:  # all on one line, separated by commas
+        lines = split_list(raw)
+    for line in lines[:limit]:
+        en, how = sentence_en(line)
+        note(d, how)
+        if en:
+            out.append(en[:width])
+    return out
+
+
+def add_extras(chat_id, sess, raw, prefix):
+    """Free-typed skills / languages while the multi-select buttons are showing."""
+    d = sess["data"]
+    _, _, _, extra_key, _ = MULTI[prefix]
+    added = []
+    items = split_list(raw)
+    if prefix == "l":  # "عربي انكليزي تركي" written with spaces only
+        items = [w for item in items for w in (item.split() if all(language_en(x)[1] == "dict" or not has_ar(x)
+                                                                     for x in item.split()) else [item])]
+    for item in items[:6]:
+        en, how = (language_en if prefix == "l" else phrase_en)(item)
+        if prefix == "l" and en.lower() in ("arabic", "english"):
+            continue  # already covered by the other questions
+        note(d, how)
+        added.append(tidy(en)[:40])
+    d.setdefault(extra_key, []).extend(added)
+    if d.get("_multi_mid"):
+        tg("editMessageReplyMarkup", chat_id=chat_id, message_id=d["_multi_mid"],
+           reply_markup={"inline_keyboard": multi_keyboard(prefix, d)})
+    if added:
+        send(chat_id, f"✅ انضافت: {esc(', '.join(added))}\nكمّل من الأزرار فوگ، وبعدها اضغط <b>✔️ تم</b> 👆")
+    else:
+        send(chat_id, "👍 تمام. اختار من الأزرار فوگ إذا عندك غيرها، وبعدها اضغط <b>✔️ تم</b> 👆")
 
 
 def handle_cv_answer(chat_id, sess, msg):
@@ -499,9 +637,6 @@ def handle_cv_answer(chat_id, sess, msg):
         return
     if step == "payment":
         handle_payment_proof(chat_id, sess, msg)
-        return
-    if step == "customers":
-        send(chat_id, "اختار من الأزرار بالرسالة اللي فوگ، وبعدها اضغط <b>✔️ تم</b> 👆")
         return
     if step == "photo":
         if not skipped:
@@ -517,99 +652,182 @@ def handle_cv_answer(chat_id, sess, msg):
     if not text:
         send(chat_id, "اكتب الجواب كنص رجاءً 🙏")
         return
+    if step == "customers":
+        send(chat_id, "اختار من الأزرار بالرسالة اللي فوگ، وبعدها اضغط <b>✔️ تم</b> 👆")
+        return
+    if step in ("skills", "other_langs"):
+        add_extras(chat_id, sess, raw, "s" if step == "skills" else "l")
+        return
 
     if skipped:
         if not QUESTIONS[step][1]:
             send(chat_id, "هذا السؤال ضروري، ما ينطي تخطيه 🙏")
             return
-        defaults = {"skills": [], "languages": ["Arabic: Native"], "email": "", "courses": [],
-                    "products": "", "territory": ""}
-        if step in defaults:
-            d[step] = defaults[step]
+        if step in ("email", "products", "territory"):
+            d[step] = ""
+        elif step == "courses":
+            d["courses"] = []
         go_next(chat_id, sess)  # skipped duties -> the CV adds strong standard duties
         return
 
-    # ---- answers given with buttons or numbers (Arabic allowed)
-    if step == "phone":
+    if has_ar(text):
+        tg("sendChatAction", chat_id=chat_id, action="typing")
+    job = (d.get("experiences") or [{}])[-1]
+
+    if step in ("name", "name_en"):
+        if len(text.split()) < 2 or len(text) > 60 or re.search(r"[\d@#/]", text) or (step == "name_en" and has_ar(text)):
+            send(chat_id, "⚠️ اكتب اسمك الكامل (اسمين على الأقل)" +
+                 (" بالحروف الإنگليزية، مثل <code>Ali Hassan Kareem</code>" if step == "name_en"
+                  else "، مثل <code>علي حسن كريم</code>"))
+            return
+        if has_ar(text):
+            d["full_name"], _ = name_en(text)
+            d["_name_check"] = True
+        else:
+            d["full_name"], d["_name_check"] = nice_name(text), False
+    elif step == "name_ok":
+        if text == NAME_FIX:
+            sess["step"] = "name_en"
+            ask(chat_id, "name_en")
+            return
+        if text != NAME_OK:
+            send(chat_id, "اختار من الأزرار 👇", keyboard=KEYBOARDS["name_ok"])
+            return
+    elif step in ("job_title", "job_role"):
+        en = pick(TITLE_BUTTONS, text)
+        if not en:
+            if len(text) > 60:
+                send(chat_id, "⚠️ اكتب المسمى الوظيفي بشكل مختصر")
+                return
+            en, how = title_en(text)
+            note(d, how)
+            en = tidy(en)
+        en = re.sub(r"(Representative|Specialist|Supervisor|Manager|Pharmacist)s\b", r"\1", en)
+        if step == "job_title":
+            d["job_title"] = en
+        else:
+            job["title"] = en
+    elif step == "phone":
         phone = re.sub(r"[^\d+\- ]", "", text.translate(AR_DIGITS)).strip(" -")
         if not 8 <= len(re.sub(r"\D", "", phone)) <= 15 or "+" in phone[1:]:
             send(chat_id, "⚠️ الرقم مو صحيح، اكتبه مثل <code>07701234567</code>")
             return
         d["phone"] = format_phone(phone)
+    elif step == "email":
+        if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[A-Za-z]{2,}", text) or has_ar(text):
+            send(chat_id, "⚠️ الإيميل مو صحيح، مثال: <code>name@gmail.com</code>\nأو اضغط تخطي", keyboard=[[SKIP]])
+            return
+        d["email"] = text.lower()
+    elif step == "city":
+        en = pick(CITY_BUTTONS, text)
+        if not en:
+            en, how = place_en(text)
+            note(d, how)
+        d["city"] = tidy(en)[:60]
+    elif step == "degree_level":
+        en = pick(DEGREE_BUTTONS, text) or next((v for ar, v in DEGREE_BUTTONS if norm(ar) in norm(text)), None)
+        if not en:
+            send(chat_id, "اختار شهادتك من الأزرار 👇", keyboard=KEYBOARDS["degree_level"])
+            return
+        d["degree_level"] = en
+        if en == HIGH_SCHOOL:
+            d.update(specialty="High School", degree=HIGH_SCHOOL, university="")
+        elif d.get("specialty") and d["specialty"] != "High School":
+            d["degree"] = f"{en} in {d['specialty']}"
+    elif step == "specialty":
+        en, how = specialty_en(text)
+        note(d, how)
+        d["specialty"] = tidy(en)[:80]
+        level = d.get("degree_level") or "Bachelor's Degree"
+        d["degree"] = f"{level} in {d['specialty']}"
+    elif step == "university":
+        en, how = university_en(text)
+        note(d, how)
+        d["university"] = tidy(en)[:90]
+    elif step == "edu_status":
+        val = text.translate(AR_DIGITS)
+        if re.fullmatch(r"(19[7-9]\d|20[0-3]\d)", val):
+            d["edu_status"] = val
+        else:
+            stage = pick(STAGE_BUTTONS, text) or stage_from_text(val)
+            if not stage:
+                send(chat_id, "⚠️ اكتب سنة التخرج 4 أرقام مثل <code>2021</code>، أو اختار مرحلتك من الأزرار",
+                     keyboard=KEYBOARDS["edu_status"])
+                return
+            d["edu_status"] = stage
     elif step == "has_exp":
         if text not in (YES_EXP, NO_EXP):
-            send(chat_id, "اختار من الأزرار 👇", keyboard=[[YES_EXP], [NO_EXP]])
+            send(chat_id, "اختار من الأزرار 👇", keyboard=KEYBOARDS["has_exp"])
             return
         d["has_experience"] = text == YES_EXP
         if not d["has_experience"]:
             d.update(experiences=[], customers=[], products="", territory="")
+    elif step == "job_company":
+        parsed = parse_job(raw) if "|" in raw and not has_ar(raw) else None  # "Company | Title | City | Duration"
+        if parsed and parsed.get("title"):
+            d.setdefault("experiences", []).append(parsed)
+            sess["step"] = "job_duration"  # next question: duties
+        else:
+            en, how = company_en(text)
+            note(d, how)
+            d.setdefault("experiences", []).append(
+                {"company": tidy(en)[:80], "title": "", "location": "", "duration": "", "duties": []})
+    elif step == "job_place":
+        en, how = place_en(text)
+        note(d, how)
+        job["location"] = tidy(en)[:80]
+    elif step == "job_duration":
+        en = pick(DURATION_BUTTONS, text)
+        if not en:
+            en, how = duration_en(text)
+            note(d, how)
+        job["duration"] = en[:40]
+    elif step == "duties":
+        job["duties"] = translate_lines(d, raw, 5, 170)
     elif step == "more":
         if text not in (ADD_JOB, DONE_JOBS):
-            send(chat_id, "اختار من الأزرار 👇", keyboard=[[ADD_JOB], [DONE_JOBS]])
+            send(chat_id, "اختار من الأزرار 👇", keyboard=KEYBOARDS["more"])
             return
         d["_add_more"] = text == ADD_JOB
+    elif step == "products":
+        en, how = products_en(text)
+        note(d, how)
+        d["products"] = tidy(en)[:120]
+    elif step == "territory":
+        en, how = place_en(text)
+        note(d, how)
+        d["territory"] = tidy(en)[:120]
     elif step == "survey":
         if text not in (YES_SURVEY, NO_SURVEY):
-            send(chat_id, "اختار من الأزرار 👇", keyboard=[[YES_SURVEY, NO_SURVEY]])
+            send(chat_id, "اختار من الأزرار 👇", keyboard=KEYBOARDS["survey"])
             return
         d["survey"] = text == YES_SURVEY
     elif step == "licence":
         choice = {LIC_CAR: "car", LIC_ONLY: "licence", LIC_NONE: "none"}.get(text)
         if not choice:
-            send(chat_id, "اختار من الأزرار 👇", keyboard=[[LIC_CAR], [LIC_ONLY], [LIC_NONE]])
+            send(chat_id, "اختار من الأزرار 👇", keyboard=KEYBOARDS["licence"])
             return
         d["licence"] = choice
-    elif step == "edu_status":
-        val = text.translate(AR_DIGITS)
-        if re.fullmatch(r"(19[7-9]\d|20[0-3]\d)", val):
-            d["edu_status"] = val
-        elif not ARABIC.search(raw) and re.search(r"student|year|stage", val, re.I):
-            d["edu_status"] = tidy(val)[:40]
-        else:
-            send(chat_id, "⚠️ اكتب سنة التخرج 4 أرقام مثل <code>2021</code>، أو اختار مرحلتك من الأزرار",
-                 keyboard=STUDENT_STAGES)
+    elif step == "english":
+        en = pick(ENGLISH_LEVELS, text)
+        if not en:
+            send(chat_id, "اختار من الأزرار 👇", keyboard=KEYBOARDS["english"])
             return
-
-    # ---- everything below is printed on the CV, so it must be English
-    elif ARABIC.search(raw):
-        send(chat_id, ENGLISH_ONLY)
-        return
-    elif step == "name":
-        if len(text.split()) < 2 or not re.fullmatch(r"[A-Za-z .'\-]+", text):
-            send(chat_id, "⚠️ اكتب اسمك الكامل بالإنگليزي (اسمين على الأقل)، مثل <code>Ali Hassan Kareem</code>")
-            return
-        d["full_name"] = nice_name(text)
-    elif step == "job_title":
-        if not re.fullmatch(r"[A-Za-z &/\-,.()]+", text) or len(text) > 50:
-            send(chat_id, "⚠️ اختار من الأزرار أو اكتب اسم الوظيفة بالإنگليزي", keyboard=JOB_TITLES)
-            return
-        d["job_title"] = tidy(text)
-    elif step == "email":
-        if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[A-Za-z]{2,}", text):
-            send(chat_id, "⚠️ الإيميل مو صحيح، مثال: <code>name@gmail.com</code>\nأو اضغط تخطي", keyboard=[[SKIP]])
-            return
-        d["email"] = text.lower()
-    elif step in ("city", "university", "degree", "territory", "products"):
-        d[step] = tidy(text)[:120]
-    elif step == "job":
-        job = parse_job(raw)
-        if not job:
-            send(chat_id, "⚠️ ما گدرت أفهمها. اكتبها بهذا الشكل:\n"
-                          "<code>Company | Job Title | City, Area | Duration</code>")
-            return
-        d.setdefault("experiences", []).append(job)
-    elif step == "duties":
-        duties = [clean(x).strip(" -•*") for x in raw.splitlines() if clean(x).strip(" -•*")]
-        if len(duties) == 1 and len(split_list(raw)) > 1:  # all on one line, separated by commas
-            duties = split_list(raw)
-        d["experiences"][-1]["duties"] = [x[:160] for x in duties][:5]
-    elif step == "skills":
-        d["skills"] = [tidy(s)[:40] for s in split_list(raw)][:12]
-    elif step == "languages":
-        d["languages"] = parse_languages(raw)
+        d["english"] = en
     elif step == "courses":
-        d["courses"] = [clean(c)[:90] for c in raw.splitlines() if clean(c)][:8]
+        d["courses"] = [tidy(c) for c in translate_lines(d, raw, 8, 90)]
     go_next(chat_id, sess)
+
+
+def latinize(value):
+    """Last safety net before the PDF: nothing Arabic may reach it (the CV fonts are Latin only)."""
+    if isinstance(value, str):
+        return transliterate(value) if has_ar(value) else value
+    if isinstance(value, list):
+        return [latinize(v) for v in value]
+    if isinstance(value, dict):
+        return {k: v if (k == "tg_user" or k.startswith("_")) else latinize(v) for k, v in value.items()}
+    return value
 
 
 # =============================================================== finishing
@@ -623,8 +841,8 @@ def cv_caption(d, chat_id, status):
         tags.append("#car" if d["licence"] == "car" else "#licence")
     if is_field_role(d) and d.get("survey"):
         tags.append("#survey")
-    return "\n".join([
-        status,
+    mt_note = ["🔤 <i>بيه أجوبة مترجمة تلقائياً، راجع النص قبل الموافقة</i>"] if d.get("_mt") else []
+    return "\n".join([status] + mt_note + [
         f"👤 {esc(d.get('full_name'))}",
         f"🎯 {esc(d.get('job_title'))}",
         f"📞 {esc(d.get('phone'))}",
@@ -654,10 +872,11 @@ def payment_message():
 
 def finish_cv(chat_id, sess):
     d = sess["data"]
+    refresh_languages(d)
     send(chat_id, "⏳ لحظات، جاي أجهز السي في مالتك...", remove_keyboard=True)
     tg("sendChatAction", chat_id=chat_id, action="upload_document")
     try:
-        pdf = build_cv(d, sess.get("photo"))
+        pdf = build_cv(latinize(d), sess.get("photo"))
     except Exception:
         log.exception("pdf build failed")
         send(chat_id, "صار خطأ بتجهيز الملف 😔 جرب مرة ثانية من /start")
@@ -809,7 +1028,7 @@ def handle_callback(cq):
         return
 
     # ---- applicant buttons (need a live session)
-    if data[:2] in ("u:", "e:", "c:", "a:"):
+    if data[:2] in ("u:", "e:", "a:") or data[:2] in tuple(f"{p}:" for p in MULTI):
         if not sess:
             drop_buttons()
             send(chat_id, "⌛ هذا الزر من رسالة قديمة.\nاكتب /start إذا تريد تبدي من جديد.")
@@ -829,18 +1048,27 @@ def handle_callback(cq):
                 show_summary(chat_id, sess)
             else:
                 start_edit(chat_id, sess, data[2:])
-        elif data.startswith("c:") and sess["step"] == "customers":
-            chosen = sess["data"].setdefault("customers", [])
-            if data == "c:done":
-                drop_buttons()
+        elif data[0] in MULTI and sess["step"] == MULTI[data[0]][0]:
+            prefix, key = data.split(":", 1)
+            _, options, sel_key, extra_key, _ = MULTI[prefix]
+            d = sess["data"]
+            selected = d.setdefault(sel_key, [])
+            if key == "done":
+                chosen = [en for k, _, en in options if k in selected]
+                shown = [ar for k, ar, _ in options if k in selected] + ((d.get(extra_key) or []) if extra_key else [])
+                tg("editMessageText", chat_id=chat_id, message_id=mid,
+                   text=(msg.get("text") or "") + "\n\n✅ " + ("، ".join(shown) if shown else "تم"))
+                if prefix == "c":
+                    d["customers"] = chosen
+                elif prefix == "s":
+                    d["skills"] = chosen + d.get("skills_extra", [])
+                else:
+                    d["other_languages"] = chosen + d.get("langs_extra", [])
                 go_next(chat_id, sess)
-                return
-            label = next((en for key, en, _ in CUSTOMER_TYPES if key == data[2:]), None)
-            if label:
-                chosen.remove(label) if label in chosen else chosen.append(label)
-                keys = [k for k, en, _ in CUSTOMER_TYPES if en in chosen]
+            elif any(k == key for k, _, _ in options):
+                selected.remove(key) if key in selected else selected.append(key)
                 tg("editMessageReplyMarkup", chat_id=chat_id, message_id=mid,
-                   reply_markup={"inline_keyboard": customers_keyboard(keys)})
+                   reply_markup={"inline_keyboard": multi_keyboard(prefix, d)})
         elif data == "a:send" and sess["step"] == "ad_confirm":
             drop_buttons()
             submit_ad(chat_id, sess)

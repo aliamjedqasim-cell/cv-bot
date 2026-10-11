@@ -217,6 +217,8 @@ def _join(items):
 
 
 def _field(d):
+    if d.get("specialty"):
+        return d["specialty"]
     degree = " ".join((d.get("degree") or "").split())
     m = re.search(r"\bin\s+(.+)$", degree, flags=re.I)
     field = m.group(1) if m else re.sub(r"^(bachelor('?s)?( degree)?|diploma|master('?s)?)( of)?\s*", "", degree, flags=re.I)
@@ -278,8 +280,9 @@ def build_profile(d):
 def build_objective(d):
     title = d.get("job_title") or "Sales Representative"
     if not is_field_role(d):
-        return (f"To join a reputable healthcare organization as a {title}, where I can apply my {_field(d)} "
-                f"knowledge, strong work ethic and communication skills to deliver accurate, high-quality work, "
+        knowledge = "my knowledge" if _field(d) == "High School" else f"my {_field(d)} knowledge"
+        return (f"To join a reputable healthcare organization as a {title}, where I can apply {knowledge}, "
+                f"strong work ethic and communication skills to deliver accurate, high-quality work, "
                 f"support the team's goals and grow professionally in a dynamic, performance-driven environment.")
     extra = (", together with my scientific background, to build trust with healthcare professionals"
              if is_medical(d) else "")
