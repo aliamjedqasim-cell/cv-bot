@@ -32,12 +32,15 @@ log = logging.getLogger("cvbot")
 
 
 def env(name, default=""):
-    return os.environ.get(name, default).strip()
+    value = os.environ.get(name, "").strip()
+    return default if value.lower() in ("", "0", "-", "none", "null", "no") else value
 
 
 TOKEN = env("BOT_TOKEN")
-ADMIN_CHAT_ID = "" if env("ADMIN_CHAT_ID") in ("", "0") else env("ADMIN_CHAT_ID")
+ADMIN_CHAT_ID = re.sub(r"[^\d-]", "", env("ADMIN_CHAT_ID"))
 CHANNEL_ID = env("CHANNEL_ID")
+if CHANNEL_ID and not CHANNEL_ID.lstrip("-").isdigit():  # "t.me/name", "name" or "@name" -> "@name"
+    CHANNEL_ID = "@" + re.sub(r"^(https?://)?(t\.me/|telegram\.me/)?@?", "", CHANNEL_ID).strip("/")
 PRICE_IQD = int(re.sub(r"\D", "", env("PRICE_IQD")) or 0)
 QI_CARD_NAME = env("QI_CARD_NAME")
 QI_CARD_NUMBER = env("QI_CARD_NUMBER")

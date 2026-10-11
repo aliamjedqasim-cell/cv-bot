@@ -14,5 +14,13 @@ services:
         sync: false
       - key: ADMIN_CHAT_ID
         sync: false
+      - key: CHANNEL_ID
+        sync: false
+      - key: QI_CARD_NAME
+        sync: false
+      - key: QI_CARD_NUMBER
+        sync: false
+      - key: PRICE_IQD
+        value: "25000"
       - key: WEBHOOK_SECRET
         generateValue: true
