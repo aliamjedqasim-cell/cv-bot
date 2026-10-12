@@ -30,6 +30,7 @@ from flask import Flask, abort, request
 
 from cv_pdf import build_cv, edu_status_text, format_phone, is_field_role, is_student, nice_name
 import ai
+import translate
 from form import TEMPLATE, convert_form, parse_form
 from translate import (company_en, duration_en, has_ar, language_en, name_en, norm, place_en, products_en,
                        sentence_en, skill_en, specialty_en, title_en, transliterate, university_en)
@@ -1732,10 +1733,37 @@ def keep_awake():
             log.warning("keep-awake visit failed: %s", e)
 
 
+def fresh_connections():
+    """Render starts gunicorn with --preload: the app loads in a parent process that is then copied into
+    the worker. Each process must open its own connections, or two processes could share one socket."""
+    global http
+    http = requests.Session()
+    ai.http = requests.Session()
+    translate.http = requests.Session()
+
+
+if hasattr(os, "register_at_fork"):
+    os.register_at_fork(after_in_child=fresh_connections)
+
+started_in = [None]
+
+
+@app.before_request
+def start_background_jobs():
+    """Background jobs start in the process that answers requests (not in gunicorn's parent)."""
+    if started_in[0] == os.getpid():
+        return
+    with lock:
+        if started_in[0] == os.getpid():
+            return
+        started_in[0] = os.getpid()
+    if (PUBLIC_URL and env("DISABLE_WEBHOOK_SETUP") != "1"
+            and os.environ.get("KEEP_AWAKE", "on").strip().lower() not in ("0", "off", "no", "false")):
+        threading.Thread(target=keep_awake, daemon=True, name="keep-awake").start()
+
+
 if env("DISABLE_WEBHOOK_SETUP") != "1":
     threading.Thread(target=register_webhook, daemon=True).start()
-    if PUBLIC_URL and os.environ.get("KEEP_AWAKE", "on").strip().lower() not in ("0", "off", "no", "false"):
-        threading.Thread(target=keep_awake, daemon=True, name="keep-awake").start()
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8000)))
