@@ -1524,6 +1524,44 @@ def health_details():
             "<title>CV bot check</title><pre style='font-size:16px'>" + esc("\n".join(lines)) + "</pre>")
 
 
+last_sync = [0.0]
+
+
+@app.get("/sync")
+def sync_deploy():
+    """Deploys the newest GitHub commit when this server runs an older one, so updates go live without
+    the dashboard. Safe to leave public: it can only deploy the latest public commit, at most every 4 minutes."""
+    hook = env("DEPLOY_HOOK")
+    running = env("RENDER_GIT_COMMIT")
+    repo = env("RENDER_GIT_REPO_SLUG") or "aliamjedqasim-cell/cv-bot"
+    branch = env("RENDER_GIT_BRANCH") or "main"
+    try:
+        latest = http.get(f"https://api.github.com/repos/{repo}/commits/{branch}", timeout=15,
+                          headers={"Accept": "application/vnd.github+json"}).json().get("sha") or ""
+    except Exception as e:
+        log.warning("github check failed: %s", e)
+        latest = ""
+    lines = [f"running: {running[:7] or 'unknown'}", f"latest on GitHub: {latest[:7] or 'unknown'}"]
+    if not latest or not running:
+        lines.append("result: could not compare versions")
+    elif latest == running:
+        lines.append("result: up to date")
+    elif not hook.startswith("https://api.render.com/deploy/"):
+        lines.append("result: DEPLOY_HOOK is not set on Render")
+    elif time.time() - last_sync[0] < 240:
+        lines.append("result: deploy already started, the new version is live in about 2 minutes")
+    else:
+        try:
+            ok = http.post(hook, timeout=20).ok
+        except Exception:
+            ok = False
+        if ok:
+            last_sync[0] = time.time()
+        lines.append("result: deploy started, live in about 2 minutes" if ok else "result: deploy hook failed")
+    return ("<!doctype html><meta charset='utf-8'><meta name='viewport' content='width=device-width'>"
+            "<title>CV bot update</title><pre style='font-size:16px'>" + esc("\n".join(lines)) + "</pre>")
+
+
 workers = ThreadPoolExecutor(max_workers=6)
 chat_locks = {}
 
