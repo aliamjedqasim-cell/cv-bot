@@ -1502,6 +1502,8 @@ def handle_update(upd):
 # =================================================================== web
 @app.get("/")
 def health():
+    stats["visits"] = stats.get("visits", 0) + 1
+    stats["last_visit"] = time.time()
     return "CV bot is running ✅"
 
 
@@ -1537,6 +1539,7 @@ def health_details():
     mins = lambda t: f"{int((time.time() - t) / 60)} min ago" if t else "never"
     lines += [f"server started: {mins(stats['started'])}",
               f"messages received: {stats['received']} (last: {mins(stats['last_received'])})",
+              f"wake-up visits: {stats.get('visits', 0)} (last: {mins(stats.get('last_visit', 0))})",
               f"handled ok: {stats['handled']}, failed: {stats['failed']}"
               + (f" (last: {stats['last_failure']})" if stats["last_failure"] else ""),
               f"telegram send problems: {stats['tg_failed']}"
