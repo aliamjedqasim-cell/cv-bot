@@ -10,10 +10,13 @@ import logging
 import os
 import re
 
+import time
+
 import requests
 
 log = logging.getLogger("cvbot.ai")
 http = requests.Session()
+TOTAL_SECONDS = 45
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 DEFAULT_MODELS = "openai/gpt-oss-120b,qwen/qwen3.8-27b,openai/gpt-oss-20b,llama-3.3-70b-versatile"
 
@@ -131,11 +134,15 @@ def read_cv(text):
         return None, "no key"
     text = (text or "")[:3500]
     last = "failed"
+    deadline = time.time() + TOTAL_SECONDS  # the applicant never waits long: after this, the form reader takes over
     for model in models():
         for minimal in (False, True):  # if a model refuses the advanced options, retry plainly once
+            left = deadline - time.time()
+            if left < 5:
+                return None, last + " (timeout)"
             try:
                 r = http.post(GROQ_URL, json=_body(model, text, minimal),
-                              headers={"Authorization": f"Bearer {key}"}, timeout=45)
+                              headers={"Authorization": f"Bearer {key}"}, timeout=(5, min(30, left)))
             except Exception as e:
                 last = f"{model}: {e.__class__.__name__}"
                 log.warning("groq %s error: %s", model, e)
