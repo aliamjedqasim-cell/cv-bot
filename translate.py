@@ -263,6 +263,26 @@ NAMES = _table({
     "الطائي": "Al-Taie", "الشمري": "Al-Shammari", "المحنا": "Al-Mehanna", "الصافي": "Al-Safi",
 })
 
+SKILLS = _table({
+    "التواصل|مهارات التواصل|الاتصال|مهارات الاتصال|التواصل الفعال": "Strong Communication Skills",
+    "التفاوض|مهارات التفاوض": "Negotiation Skills", "الاقناع|مهارات الاقناع": "Persuasion Skills",
+    "اغلاق الصفقات|اغلاق البيع|الاقناع واغلاق البيع": "Persuasion & Closing Deals",
+    "خدمه العملاء|التعامل مع العملاء|التعامل مع الزبائن": "Customer Service Skills",
+    "العمل الجماعي|العمل ضمن فريق|العمل بفريق|فريق": "Teamwork Collaboration", "اداره الوقت|تنظيم الوقت": "Time Management",
+    "العمل تحت الضغط|تحمل الضغط": "Working Under Pressure", "حل المشاكل|حل المشكلات": "Problem-Solving Skills",
+    "سرعه التعلم|التعلم السريع": "Fast Learning", "الاوفيس|برامج الاوفيس|مايكروسوفت اوفيس|اوفيس": "Microsoft Office",
+    "الحاسوب|الكمبيوتر|استخدام الحاسوب": "Computer Skills", "الاكسل|اكسل": "Microsoft Excel", "الوورد|وورد": "Microsoft Word",
+    "التسويق": "Marketing", "السوشيال ميديا|التسويق الالكتروني|التسويق بالسوشيال ميديا": "Social Media Marketing",
+    "القياده": "Leadership", "التنظيم": "Organization Skills", "الدقه|الدقه بالتفاصيل|الاهتمام بالتفاصيل": "Detail-Oriented",
+    "البيع|المبيعات|مهارات البيع": "Sales Skills", "العرض والتقديم|التقديم|الالقاء|العرض": "Presentation Skills",
+    "بناء العلاقات|العلاقات": "Relationship Building", "العلاقات العامه": "Public Relations",
+    "الذكاء العاطفي": "Emotional Intelligence", "الصبر": "Patience", "الثقه بالنفس": "Self-Confidence",
+    "الالتزام|الانضباط": "Commitment & Discipline", "المرونه": "Flexibility", "السياقه": "Driving",
+    "التصميم|التصميم الجرافيكي": "Graphic Design", "التحليل|التفكير التحليلي": "Analytical Thinking",
+    "اداره المبيعات": "Sales Management", "الابداع": "Creativity", "اداره الفريق": "Team Management",
+    "التخطيط": "Planning", "المتابعه": "Follow-up Skills", "الاستماع|الاستماع الجيد": "Active Listening",
+})
+
 LANG_NAMES = _table({
     "العربيه|عربي": "Arabic", "الانكليزيه|انكليزي|انجليزي|الانجليزيه": "English", "الكرديه|كردي": "Kurdish",
     "التركيه|تركي": "Turkish", "الفارسيه|فارسي": "Persian", "الفرنسيه|فرنسي": "French", "الالمانيه|الماني": "German",
@@ -533,3 +553,7 @@ def language_en(text):
 def phrase_en(text):
     """Any short phrase (a skill, a language...)."""
     return _phrase(text)
+
+
+def skill_en(text):
+    return _phrase(text, SKILLS)

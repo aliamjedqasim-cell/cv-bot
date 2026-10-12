@@ -245,6 +245,8 @@ def _companies(d):
 
 
 def build_profile(d):
+    if d.get("profile_en"):  # written by the AI from the applicant's own facts
+        return d["profile_en"]
     field = _field(d)
     title = d.get("job_title") or "Sales Representative"
     stage = "student" if is_student(d) else "graduate"
@@ -278,6 +280,8 @@ def build_profile(d):
 
 
 def build_objective(d):
+    if d.get("objective_en"):
+        return d["objective_en"]
     title = d.get("job_title") or "Sales Representative"
     if not is_field_role(d):
         knowledge = "my knowledge" if _field(d) == "High School" else f"my {_field(d)} knowledge"
@@ -293,10 +297,10 @@ def build_objective(d):
 
 
 def additional_info(d):
-    """Extra facts the applicant confirmed (field roles only)."""
+    """Extra facts the applicant gave: age, and field-sales facts for sales roles."""
+    out = [f"Age: {d['age']} years old."] if d.get("age") else []
     if not is_field_role(d):
-        return []
-    out = []
+        return out
     if d.get("survey"):
         out.append(f"Conducted a field market survey of doctors, clinics and potential customers in {d.get('city') or 'my city'}.")
     if d.get("licence") == "car":
@@ -537,7 +541,7 @@ def _story(d, s, max_skills=12, duty_targets=(4, 3)):
             duties = [_sentence(x) for x in (e.get("duties") or []) if _sentence(x)][:5]
             verbs = {x.split()[0].lower() for x in duties}
             for extra in duties_for_job(d, e):
-                if len(duties) >= target:
+                if len(duties) >= target or (d.get("_ai") and len(duties) >= 3):  # AI already wrote enough
                     break
                 if extra.split()[0].lower() not in verbs:  # don't repeat what they already wrote
                     duties.append(extra)

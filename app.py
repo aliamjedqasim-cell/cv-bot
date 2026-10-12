@@ -11,6 +11,7 @@ Environment variables (Render -> Environment). Only BOT_TOKEN is required:
     PRICE_IQD         CV price, e.g. 25000. 0 or empty = free service
     QI_CARD_NAME      name on the Qi Card that receives payments
     QI_CARD_NUMBER    the Qi Card number shown to applicants
+    GROQ_API_KEY      free Groq key (console.groq.com) for reading free-form applications with AI
     MYMEMORY_EMAIL    optional; raises the free translation limit (5,000 -> 50,000 characters a day)
     PUBLIC_URL        only needed outside Render (Render provides RENDER_EXTERNAL_URL)
 """
@@ -28,8 +29,10 @@ import requests
 from flask import Flask, abort, request
 
 from cv_pdf import build_cv, edu_status_text, format_phone, is_field_role, is_student, nice_name
-from translate import (company_en, duration_en, has_ar, language_en, name_en, norm, phrase_en, place_en,
-                       products_en, sentence_en, specialty_en, title_en, transliterate, university_en)
+import ai
+from form import TEMPLATE, convert_form, parse_form
+from translate import (company_en, duration_en, has_ar, language_en, name_en, norm, place_en, products_en,
+                       sentence_en, skill_en, specialty_en, title_en, transliterate, university_en)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("cvbot")
@@ -117,6 +120,7 @@ WELCOME = (
 )
 
 QUESTIONS = {  # step -> (question, optional?)
+    "form": ("دز معلوماتك برسالة وحدة 👆", False),
     "name": ("شنو اسمك الثلاثي؟ ✍️\nمثال: <code>علي حسن كريم</code>", False),
     "name_ok": ("", False),
     "name_en": ("اكتب اسمك بالحروف الإنگليزية مثل ما تريده يطلع بالسي في\nمثال: <code>Ali Hassan Kareem</code>", False),
@@ -174,6 +178,7 @@ EDIT_CONTINUES = {"name": {"name_ok"}, "edu": {"specialty", "university", "edu_s
 EDIT_START = {"edu": "degree_level", "exp": "has_exp", "langs": "english"}
 AD_ORDER = ["ad_company", "ad_title", "ad_city", "ad_req", "ad_resp", "ad_contact"]
 HIGH_SCHOOL = "High School Diploma"
+BACHELOR = "Bachelor's Degree"
 
 # ================================================================ sessions
 sessions = {}  # chat_id -> {"mode", "step", "data", "photo", "t", "editing", "admin_msg"}
@@ -390,19 +395,196 @@ def show_menu(chat_id):
 
 
 def start_cv(chat_id, user):
-    new_session(chat_id, "cv", "name", user)
-    price = (f"\n💰 كلفة الخدمة: <b>{PRICE_IQD:,} دينار</b>، تدفعها بعد ما تخلص الأسئلة."
-             if PAID else "")
+    new_session(chat_id, "cv", "form", user)
+    price = f"\n💰 كلفة الخدمة: <b>{PRICE_IQD:,} دينار</b>، تدفعها بالأخير." if PAID else ""
+    free_text = "أو اكتب معلوماتك <b>براحتك بدون ترتيب</b> 🤖" if ai.enabled() else "وعبّيها"
     send(chat_id, "📝 <b>إنشاء سيرة ذاتية</b>\n\n"
-                  "راح أسألك أسئلة قليلة، سؤال بعد سؤال.\n"
-                  "✍️ جاوب <b>بالعربي عادي</b>، وأنا أحوّل كلشي للإنگليزي بالسي في ✨\n"
-                  f"✏️ بالأخير تگدر تراجع معلوماتك وتعدّلها.{price}\n"
-                  "❌ للإلغاء بأي وقت اكتب /cancel", remove_keyboard=True)
+                  f"1️⃣ اضغط على الكليشة اللي تحت حتى تنسخها، {free_text}\n"
+                  "2️⃣ اكتب <b>بالعربي عادي</b>، والخانة اللي ما عندك اتركها فارغة\n"
+                  "3️⃣ دزها برسالة وحدة، وأنا أرتب كلشي وأحوّله للإنگليزي ✨\n\n"
+                  "💼 الخبرات: كل شغل بسطر، مثل:\n<code>شركة النور - مندوب طبي - بغداد - سنتين</code>"
+                  f"{price}", remove_keyboard=True)
+    send(chat_id, f"<pre>{esc(TEMPLATE)}</pre>", inline=[[{"text": "🗣️ أفضّل سؤال سؤال", "callback_data": "u:steps"}]])
+
+
+def start_steps(chat_id, sess):
+    sess["step"], sess["fill"] = "name", False
+    send(chat_id, "تمام 👍 راح أسألك سؤال سؤال. جاوب بالعربي عادي.\n❌ للإلغاء اكتب /cancel", remove_keyboard=True)
     ask(chat_id, "name")
+
+
+# ============================================================ one-message form
+def missing_steps(d):
+    """After the one-message form: the questions that still need an answer, in order."""
+    steps = []
+    if not d.get("full_name"):
+        steps.append("name")
+    if not d.get("job_title"):
+        steps.append("job_title")
+    if not d.get("phone"):
+        steps.append("phone")
+    if not d.get("city"):
+        steps.append("city")
+    if not d.get("degree_level"):
+        steps.append("degree_level")
+    if d.get("degree_level") != HIGH_SCHOOL:
+        if not d.get("specialty"):
+            steps.append("specialty")
+        if not d.get("university"):
+            steps.append("university")
+    if not d.get("edu_status"):
+        steps.append("edu_status")
+    if not d.get("english"):
+        steps.append("english")
+    if is_field_role(d):
+        if d.get("survey") is None:
+            steps.append("survey")
+        if not d.get("licence"):
+            steps.append("licence")
+    if not d.get("_photo_asked"):
+        steps.append("photo")
+    return steps
+
+
+def apply_cv_data(d, r):
+    """Puts AI / form results (ai.SCHEMA shape) into the session data, English for the CV, Arabic for the summary."""
+    def txt(key):
+        v = r.get(key)
+        return clean(v) if isinstance(v, str) and clean(v) and clean(v).lower() not in ("null", "none", "n/a") else ""
+
+    def lst(key):
+        return [clean(x) for x in (r.get(key) or []) if isinstance(x, str) and clean(x)]
+
+    def en(key, limit=90):  # English only; anything still Arabic gets spelled in Latin letters
+        v = txt(key)
+        return tidy(transliterate(v) if has_ar(v) else v)[:limit]
+
+    ar = d.setdefault("_ar", {})
+    if en("full_name_en"):
+        d["full_name"] = nice_name(en("full_name_en", 60))
+        ar["name"] = txt("full_name_ar")
+    if txt("age"):
+        age = re.sub(r"\D", "", txt("age").translate(AR_DIGITS))
+        if age and 15 <= int(age) <= 70:
+            d["age"] = age
+    if txt("phone"):
+        digits = re.sub(r"[^\d+]", "", txt("phone").translate(AR_DIGITS))
+        if 8 <= len(re.sub(r"\D", "", digits)) <= 15:
+            d["phone"] = format_phone(digits)
+    if re.fullmatch(r"[^@\s]+@[^@\s]+\.[A-Za-z]{2,}", txt("email")):
+        d["email"] = txt("email").lower()
+    for key, field, limit in (("city", "city", 60), ("job_title", "job_title", 60), ("university", "university", 90),
+                              ("products", "products", 120), ("territory", "territory", 120)):
+        if en(f"{key}_en"):
+            d[field] = en(f"{key}_en", limit)
+            ar[field] = txt(f"{key}_ar")
+    if d.get("job_title"):
+        d["job_title"] = re.sub(r"(Representative|Specialist|Supervisor|Manager|Pharmacist)s\b", r"\1", d["job_title"])
+    level = next((v for _, v in DEGREE_BUTTONS if v.lower() == txt("degree_level").lower()), None)
+    if level:
+        d["degree_level"] = level
+        ar["degree_level"] = next(a for a, v in DEGREE_BUTTONS if v == level)
+    if level == HIGH_SCHOOL:
+        d.update(specialty="High School", degree=HIGH_SCHOOL, university="")
+    elif en("specialty_en"):
+        d["specialty"] = en("specialty_en", 80)
+        ar["specialty"] = txt("specialty_ar")
+        d["degree"] = f"{d.get('degree_level') or BACHELOR} in {d['specialty']}"
+    status = txt("edu_status")
+    if re.fullmatch(r"(19[7-9]\d|20[0-3]\d)", status.translate(AR_DIGITS)):
+        d["edu_status"] = status.translate(AR_DIGITS)
+    elif status and not has_ar(status):
+        d["edu_status"] = tidy(status)[:40]
+    if d.get("edu_status"):
+        ar["edu_status"] = (f"متخرج سنة {d['edu_status']}" if d["edu_status"].isdigit()
+                            else txt("edu_status_ar"))
+    jobs = []
+    for job in (r.get("experiences") or [])[:MAX_JOBS]:
+        if not isinstance(job, dict):
+            continue
+        j = {"company": "", "title": "", "location": "", "duration": "", "duties": [], "_ar": {}}
+        for k in ("company", "title", "location", "duration"):
+            v = clean(job.get(f"{k}_en") or "")
+            v = transliterate(v) if has_ar(v) else v
+            j[k] = (v if k == "duration" else tidy(v))[:80]
+            j["_ar"][k] = clean(job.get(f"{k}_ar") or "")
+        if not j["company"]:
+            continue
+        j["title"] = re.sub(r"(Representative|Specialist|Supervisor|Manager|Pharmacist)s\b", r"\1", j["title"])
+        j["duties"] = [x for x in (clean(v) for v in job.get("duties_en") or []) if x and not has_ar(x)][:5]
+        j["_ar"]["duties"] = [clean(v) for v in job.get("duties_ar") or [] if clean(v)][:5]
+        jobs.append(j)
+    d["experiences"], d["has_experience"] = jobs, bool(jobs)
+    customers = [c for c in lst("customers_en") if c in {e for _, _, e in CUSTOMER_TYPES}]
+    if customers:
+        d["customers"] = customers
+        ar["customers"] = [a for _, a, e in CUSTOMER_TYPES if e in customers]
+    if isinstance(r.get("survey"), bool):
+        d["survey"] = r["survey"]
+    if txt("licence") in ("car", "licence", "none"):
+        d["licence"] = txt("licence")
+    skills = [tidy(s)[:40] for s in lst("skills_en") if not has_ar(s)][:12]
+    if skills:
+        d["skills"], ar["skills"] = skills, lst("skills_ar")
+    level = next((v for _, v in ENGLISH_LEVELS if v.lower() == txt("english_level").lower()), None)
+    if level:
+        d["english"] = level
+        ar["english"] = next(a for a, v in ENGLISH_LEVELS if v == level)
+    others = [tidy(x)[:30] for x in lst("other_languages_en") if not has_ar(x) and x.lower() not in ("arabic", "english")]
+    if others:
+        d["other_languages"] = others[:4]
+    courses = [x[:90] for x in lst("courses_en") if not has_ar(x)][:8]
+    if courses:
+        d["courses"], ar["courses"] = courses, lst("courses_ar")
+    for key in ("profile_en", "objective_en"):
+        if txt(key) and not has_ar(txt(key)):
+            d[key] = txt(key)[:600]
+
+
+def handle_form(chat_id, sess, msg):
+    d = sess["data"]
+    text = (msg.get("text") or msg.get("caption") or "").strip()
+    if msg.get("photo") and not text:
+        send(chat_id, "📸 الصورة راح أطلبها بعدين. هسه دز معلوماتك كتابة برسالة وحدة 🙏")
+        return
+    if len(clean(text)) < 15:
+        send(chat_id, "اكتب معلوماتك كلها برسالة وحدة حتى أرتبها 🙏\nأو اضغط <b>🗣️ أفضّل سؤال سؤال</b> فوگ.")
+        return
+    send(chat_id, "⏳ لحظات، دا أقرأ معلوماتك وأرتبها...", remove_keyboard=True)
+    tg("sendChatAction", chat_id=chat_id, action="typing")
+    data, how = ai.read_cv(text) if ai.enabled() else (None, "off")
+    if data:
+        d["_ai"] = True
+        log.info("form read by AI (%s)", how)
+    else:
+        if ai.enabled():
+            log.warning("AI unavailable (%s); using the form reader", how)
+        fields = parse_form(text)
+        if not fields:
+            send(chat_id, "ما گدرت أفهم الرسالة 😅\nرجاءً انسخ الكليشة فوگ وعبّيها، "
+                          "أو اضغط <b>🗣️ أفضّل سؤال سؤال</b>.",
+                 inline=[[{"text": "🗣️ أفضّل سؤال سؤال", "callback_data": "u:steps"}]])
+            return
+        data = convert_form(fields)
+        d["_mt"] = True
+    apply_cv_data(d, data)
+    sess["fill"], sess["fill_total"] = True, len(missing_steps(d))
+    got = sum(1 for k in ("full_name", "job_title", "phone", "city", "degree", "edu_status") if d.get(k))
+    jobs = len(d.get("experiences") or [])
+    send(chat_id, f"✅ رتّبت معلوماتك" + (f"، ولگيت {jobs} خبرة" if jobs else "") + ".\n"
+                  + ("باقي كم سؤال صغير 👇" if missing_steps(d) != ["photo"] or got < 6 else "باقي الصورة 👇"))
+    go_next(chat_id, sess)
+
+
+
 
 
 # ========================================================== CV questions
 def progress(sess, step):
+    if sess.get("fill"):
+        total = sess.get("fill_total") or 1
+        left = len(missing_steps(sess["data"]))
+        return f"<b>سؤال {max(1, total - left + 1)} من {total}</b>\n" if step in missing_steps(sess["data"]) else ""
     steps = cv_steps(sess["data"])
     return f"<b>السؤال {steps.index(step) + 1} من {len(steps)}</b>\n" if step in steps else ""
 
@@ -470,9 +652,21 @@ def ask(chat_id, step):
 
 
 def go_next(chat_id, sess):
-    nxt = next_step(sess, sess["step"])
-    editing = sess.get("editing")
     d = sess["data"]
+    editing = sess.get("editing")
+    if sess.get("fill") and not editing and sess["step"] != "confirm":
+        if sess["step"] == "name" and d.get("_name_check"):
+            nxt = "name_ok"
+        else:
+            todo = missing_steps(d)
+            nxt = todo[0] if todo else "confirm"
+        sess["step"] = nxt
+        if nxt == "confirm":
+            show_summary(chat_id, sess)
+        else:
+            ask(chat_id, nxt)
+        return
+    nxt = next_step(sess, sess["step"])
     if editing == "job_title" and is_field_role(d) and ("survey" not in d or "licence" not in d):
         sess["editing"], nxt = "field_extra", "survey"  # new sales role: ask the field questions too
     elif editing and nxt not in EDIT_CONTINUES.get(editing, ()):
@@ -525,14 +719,16 @@ def summary_text(sess):
         for n, e in enumerate(d.get("experiences") or [], 1):
             jar = e.get("_ar") or {}
             lines.append(line(f"💼 <b>الشغل {n}:</b>", jar.get("company"), e.get("company")))
-            details_ar = " - ".join(jar.get(k) or e.get(k) or "" for k in ("title", "location", "duration")
+            details_ar = " - ".join(jar.get(k) or e.get(k) for k in ("title", "location", "duration")
                                     if jar.get(k) or e.get(k))
             details_en = " | ".join(e.get(k) for k in ("title", "location", "duration") if e.get(k))
             if details_en:
                 lines.append(line("      🔹", details_ar, details_en))
-            duties_ar = jar.get("duties") or []
-            for i, duty in enumerate((e.get("duties") or [])[:3]):
-                lines.append(line("      •", duties_ar[i] if i < len(duties_ar) else "", duty))
+            duties_ar = [x for x in jar.get("duties") or [] if has_ar(x)]
+            if duties_ar:
+                lines.append(f"      📝 {esc('، '.join(duties_ar))[:300]}")
+            for duty in (e.get("duties") or [])[:4]:
+                lines.append(f"        🇬🇧 • {esc(duty)}")
             if not e.get("duties"):
                 lines.append("      • <i>راح أكتب مهام قوية مناسبة تلقائياً</i>")
         if is_field_role(d):
@@ -555,12 +751,21 @@ def summary_text(sess):
     langs_ar = ["العربية (لغة أم)"]
     if d.get("english") and d["english"] != "none":
         langs_ar.append(f"الإنگليزية ({ar.get('english') or d['english']})")
-    langs_ar += ar.get("other_languages") or []
+    other_ar = ar.get("other_languages")
+    if not other_ar:
+        names = {en.lower(): a for _, a, en in OTHER_LANGS}
+        other_ar = [names.get(x.split(":")[0].strip().lower(), x) for x in d.get("other_languages") or []]
+    langs_ar += other_ar
     lines.append(line("🗣️ <b>اللغات:</b>", langs_ar, d.get("languages")))
     if d.get("courses"):
         lines.append(line("📜 <b>الدورات:</b>", ar.get("courses"), d["courses"]))
     lines.append("📸 <b>الصورة:</b> " + ("موجودة" if sess.get("photo") else "بدون صورة"))
-    if d.get("_mt"):
+    if d.get("age"):
+        lines.insert(5, f"🎂 <b>العمر:</b> {esc(d['age'])}")
+    if d.get("_ai"):
+        lines.append("\n🤖 <i>رتّبت معلوماتك وكتبتها بالإنگليزي بالذكاء الاصطناعي. "
+                     "تأكد منها، وإذا شي مو مضبوط اضغط ✏️ تعديل.</i>")
+    elif d.get("_mt"):
         lines.append("\n🔤 <i>بعض أجوبتك انترجمت تلقائياً. إذا شي مو مضبوط اضغط ✏️ تعديل.</i>")
     text = ""
     for item in lines:  # Telegram allows 4096 characters; cut whole lines so no HTML tag is left open
@@ -656,7 +861,7 @@ def add_extras(chat_id, sess, raw, prefix):
         items = [w for item in items for w in (item.split() if all(language_en(x)[1] == "dict" or not has_ar(x)
                                                                      for x in item.split()) else [item])]
     for item in items[:6]:
-        en, how = (language_en if prefix == "l" else phrase_en)(item)
+        en, how = (language_en if prefix == "l" else skill_en)(item)
         if prefix == "l" and en.lower() in ("arabic", "english"):
             continue  # already covered by the other questions
         note(d, how)
@@ -684,7 +889,11 @@ def handle_cv_answer(chat_id, sess, msg):
     if step == "payment":
         handle_payment_proof(chat_id, sess, msg)
         return
+    if step == "form":
+        handle_form(chat_id, sess, msg)
+        return
     if step == "photo":
+        d["_photo_asked"] = True
         if not skipped:
             if msg.get("photo"):
                 sess["photo"] = download_file(msg["photo"][-1]["file_id"])
@@ -902,7 +1111,8 @@ def cv_caption(d, chat_id, status):
         tags.append("#car" if d["licence"] == "car" else "#licence")
     if is_field_role(d) and d.get("survey"):
         tags.append("#survey")
-    mt_note = ["🔤 <i>بيه أجوبة مترجمة تلقائياً، راجع النص قبل الموافقة</i>"] if d.get("_mt") else []
+    mt_note = (["🤖 <i>مكتوب بالذكاء الاصطناعي، راجع النص قبل الموافقة</i>"] if d.get("_ai") else
+               ["🔤 <i>بيه أجوبة مترجمة تلقائياً، راجع النص قبل الموافقة</i>"] if d.get("_mt") else [])
     return "\n".join([status] + mt_note + [
         f"👤 {esc(d.get('full_name'))}",
         f"🎯 {esc(d.get('job_title'))}",
@@ -1069,7 +1279,9 @@ def handle_callback(cq):
     if data.startswith("m:"):
         drop_buttons()
         if data == "m:resume" and sess and sess["mode"] == "cv":
-            if sess["step"] == "payment":
+            if sess["step"] == "form":
+                start_cv(chat_id, user)
+            elif sess["step"] == "payment":
                 send(chat_id, payment_message())
             elif sess["step"] == "confirm":
                 show_summary(chat_id, sess)
@@ -1103,6 +1315,9 @@ def handle_callback(cq):
         elif data == "u:restart":
             drop_buttons()
             start_cv(chat_id, user)
+        elif data == "u:steps" and sess["step"] == "form":
+            drop_buttons()
+            start_steps(chat_id, sess)
         elif data.startswith("e:") and sess["step"] == "confirm":
             drop_buttons()
             if data == "e:back":
@@ -1218,6 +1433,13 @@ def handle_update(upd):
 
     if cmd == "/myid":
         send(chat_id, f"🆔 رقم المحادثة مالتك:\n<code>{chat_id}</code>")
+        return
+    if cmd == "/status" and is_admin:
+        tg("sendChatAction", chat_id=chat_id, action="typing")
+        send(chat_id, "🔧 <b>حالة البوت</b>\n"
+                      f"💳 الدفع: {'مفعّل' if PAID else 'مجاني'}\n"
+                      f"📢 القناة: {esc(CHANNEL_ID) or 'ما محددة'}\n"
+                      f"🤖 الذكاء الاصطناعي: {esc(ai.ping())}")
         return
     if cmd in ("/start", "/menu"):
         show_menu(chat_id)

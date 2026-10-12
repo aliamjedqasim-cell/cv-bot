@@ -18,6 +18,8 @@ services:
         sync: false
       - key: QI_CARD_NUMBER
         sync: false
+      - key: GROQ_API_KEY
+        sync: false
       - key: PRICE_IQD
         value: "25000"
       - key: WEBHOOK_SECRET
