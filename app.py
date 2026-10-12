@@ -401,24 +401,31 @@ def show_menu(chat_id):
     send(chat_id, WELCOME, inline=menu)
 
 
-def start_cv(chat_id, user):
-    new_session(chat_id, "cv", "form", user)
+def cv_intro():
+    """The two messages that open a CV: instructions, then the form with a one-tap copy button."""
     price = f"\n💰 كلفة الخدمة: <b>{PRICE_IQD:,} دينار</b>، تدفعها بالأخير." if PAID else ""
     free_text = "🤖 وإذا تحب، اكتب معلوماتك <b>براحتك بدون كليشة</b>، وأنا أفهمها.\n\n" if ai.enabled() else ""
-    send(chat_id, "📝 <b>إنشاء سيرة ذاتية</b>\n\n"
-                  "1️⃣ اضغط زر <b>📋 انسخ الكليشة</b> اللي تحت\n"
-                  "2️⃣ الصقها برسالة جديدة، وعبّيها <b>بالعربي عادي</b>. الخانة اللي ما عندك اتركها فارغة\n"
-                  "3️⃣ دزها برسالة وحدة، وأنا أرتب كلشي وأحوّله للإنگليزي ✨\n\n"
-                  f"{free_text}"
-                  "💼 <b>الخبرات:</b> كل شغل بسطر، مثل:\n<b>شركة النور - مندوب طبي - بغداد - سنتين</b>"
-                  f"{price}", remove_keyboard=True)
+    intro = ("📝 <b>إنشاء سيرة ذاتية</b>\n\n"
+             "1️⃣ اضغط زر <b>📋 انسخ الكليشة</b> اللي تحت\n"
+             "2️⃣ الصقها برسالة جديدة، وعبّيها <b>بالعربي عادي</b>. الخانة اللي ما عندك اتركها فارغة\n"
+             "3️⃣ دزها برسالة وحدة، وأنا أرتب كلشي وأحوّله للإنگليزي ✨\n\n"
+             f"{free_text}"
+             "💼 <b>الخبرات:</b> كل شغل بسطر، مثل:\n<b>شركة النور - مندوب طبي - بغداد - سنتين</b>"
+             f"{price}")
     steps_btn = {"text": "🗣️ أفضّل سؤال سؤال", "callback_data": "u:steps"}
     buttons = [[steps_btn]]
     if len(TEMPLATE) <= 256:  # Telegram's limit for a copy button
         buttons = [[{"text": "📋 انسخ الكليشة", "copy_text": {"text": TEMPLATE}}], [steps_btn]]
-    res = send(chat_id, esc(TEMPLATE), inline=buttons)
-    if not res.get("ok") and len(buttons) > 1:  # an old Telegram app without copy buttons: long-press to copy
-        send(chat_id, esc(TEMPLATE), inline=[[steps_btn]])
+    return intro, esc(TEMPLATE), buttons, [[steps_btn]]
+
+
+def start_cv(chat_id, user):
+    new_session(chat_id, "cv", "form", user)
+    intro, form_text, buttons, plain_buttons = cv_intro()
+    send(chat_id, intro, remove_keyboard=True)
+    res = send(chat_id, form_text, inline=buttons)
+    if not res.get("ok") and buttons != plain_buttons:  # an old Telegram app without copy buttons
+        send(chat_id, form_text, inline=plain_buttons)
 
 
 def start_steps(chat_id, sess):
@@ -1524,7 +1531,8 @@ def health_details():
               f"admin id: {'set' if ADMIN_CHAT_ID else 'MISSING'}",
               f"payment: {'on' if PAID else 'off (free)'}",
               f"channel: {'set' if CHANNEL_ID else 'not set'}",
-              f"ai key: {'set' if ai.enabled() else 'not set'}"]
+              f"ai key: {'set' if ai.enabled() else 'not set'}",
+              f"keep awake: {'on' if any(t.name == 'keep-awake' for t in threading.enumerate()) else 'off'}"]
     mins = lambda t: f"{int((time.time() - t) / 60)} min ago" if t else "never"
     lines += [f"server started: {mins(stats['started'])}",
               f"messages received: {stats['received']} (last: {mins(stats['last_received'])})",
@@ -1574,6 +1582,17 @@ def self_test():
         if res.get("ok"):
             tg("deleteMessage", chat_id=ADMIN_CHAT_ID, message_id=res["result"]["message_id"])
         out.append("send to admin: " + ("OK (silent, deleted)" if res.get("ok") else f"FAILED ({res.get('description')})"))
+        intro, form_text, buttons, _ = cv_intro()
+        checks = []
+        for text, markup in ((intro, None), (form_text, {"inline_keyboard": buttons})):
+            params = {"chat_id": ADMIN_CHAT_ID, "text": text, "parse_mode": "HTML", "disable_notification": True}
+            if markup:
+                params["reply_markup"] = markup
+            r = tg("sendMessage", **params)
+            if r.get("ok"):
+                tg("deleteMessage", chat_id=ADMIN_CHAT_ID, message_id=r["result"]["message_id"])
+            checks.append("OK" if r.get("ok") else f"FAILED ({r.get('description')})")
+        out.append(f"cv start messages: intro {checks[0]}, form with copy button {checks[1]}")
     started = time.time()
     data, how = ai.read_cv(SELF_TEST_TEXT) if ai.enabled() else (None, "no key")
     used_ai = bool(data)
@@ -1701,8 +1720,22 @@ def register_webhook():
         time.sleep(3 * (attempt + 1))
 
 
+def keep_awake():
+    """Render's free plan sleeps after 15 idle minutes: the first reply then takes about a minute and
+    half-filled CVs are lost. A light visit every 10 minutes keeps it awake (one service awake all month
+    fits in the 750 free hours). Set KEEP_AWAKE=off on Render to stop it."""
+    while True:
+        time.sleep(600)
+        try:
+            requests.get(PUBLIC_URL + "/", timeout=30)
+        except Exception as e:
+            log.warning("keep-awake visit failed: %s", e)
+
+
 if env("DISABLE_WEBHOOK_SETUP") != "1":
     threading.Thread(target=register_webhook, daemon=True).start()
+    if PUBLIC_URL and os.environ.get("KEEP_AWAKE", "on").strip().lower() not in ("0", "off", "no", "false"):
+        threading.Thread(target=keep_awake, daemon=True, name="keep-awake").start()
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8000)))
