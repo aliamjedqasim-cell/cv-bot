@@ -184,6 +184,8 @@ BACHELOR = "Bachelor's Degree"
 sessions = {}  # chat_id -> {"mode", "step", "data", "photo", "t", "editing", "admin_msg"}
 lock = threading.Lock()
 seen_updates = deque(maxlen=2000)
+stats = {"started": time.time(), "received": 0, "last_received": 0.0, "handled": 0, "failed": 0,
+         "last_failure": "", "tg_failed": 0, "last_tg_failure": ""}  # shown on /health, no personal data
 
 
 def new_session(chat_id, mode, step, user):
@@ -247,9 +249,14 @@ def tg(method, **params):
         res = r.json()
         if not res.get("ok"):
             log.warning("telegram %s failed: %s", method, res.get("description"))
+            if method not in ("deleteMessage", "editMessageReplyMarkup", "answerCallbackQuery"):
+                stats["tg_failed"] += 1
+                stats["last_tg_failure"] = f"{method}: {str(res.get('description'))[:150]} ({time.strftime('%H:%M')} UTC)"
         return res
     except Exception as e:  # network hiccups must never crash the bot
         log.warning("telegram %s error: %s", method, e)
+        stats["tg_failed"] += 1
+        stats["last_tg_failure"] = f"{method}: {e.__class__.__name__} ({time.strftime('%H:%M')} UTC)"
         return {"ok": False}
 
 
@@ -1518,10 +1525,78 @@ def health_details():
               f"payment: {'on' if PAID else 'off (free)'}",
               f"channel: {'set' if CHANNEL_ID else 'not set'}",
               f"ai key: {'set' if ai.enabled() else 'not set'}"]
+    mins = lambda t: f"{int((time.time() - t) / 60)} min ago" if t else "never"
+    lines += [f"server started: {mins(stats['started'])}",
+              f"messages received: {stats['received']} (last: {mins(stats['last_received'])})",
+              f"handled ok: {stats['handled']}, failed: {stats['failed']}"
+              + (f" (last: {stats['last_failure']})" if stats["last_failure"] else ""),
+              f"telegram send problems: {stats['tg_failed']}"
+              + (f" (last: {stats['last_tg_failure']})" if stats["last_tg_failure"] else "")]
     if request.args.get("ai") == "1":
         lines.append("ai test: " + ai.ping())
+    if request.args.get("test") == "1":
+        lines += self_test()
     return ("<!doctype html><meta charset='utf-8'><meta name='viewport' content='width=device-width'>"
             "<title>CV bot check</title><pre style='font-size:16px'>" + esc("\n".join(lines)) + "</pre>")
+
+
+SELF_TEST_TEXT = """الاسم الثلاثي: حسين علي جبار
+العمر: 27
+رقم الهاتف: 07801234567
+الإيميل: hussein.ali@gmail.com
+السكن: بغداد - زيونة
+الوظيفة المطلوبة: مندوب طبي
+الشهادة والتخصص: بكالوريوس علوم حياة
+الجامعة أو المعهد: جامعة بغداد
+سنة التخرج أو المرحلة: 2021
+الخبرات: شركة بيونير - مندوب طبي - بغداد الرصافة - سنتين
+المهام: زيارة الأطباء والصيدليات وعرض المنتجات وتحقيق التارگت الشهري
+المنتجات: مضادات حيوية ومسكنات
+المناطق: الرصافة
+الزبائن: أطباء وصيدليات
+المهارات: التواصل، الإقناع
+مستوى الإنگليزي: جيد جدا
+لغات ثانية:
+الدورات: دورة مهارات البيع
+إجازة سوق وسيارة؟ نعم
+مسح ميداني؟ نعم"""
+last_self_test = [0.0, []]
+
+
+def self_test():
+    """Checks the whole path on the live server: sending to the admin (silent, deleted at once),
+    the AI reader and the PDF. Runs at most every 5 minutes; nothing is kept or sent to anyone else."""
+    if time.time() - last_self_test[0] < 300:
+        return ["self-test (cached):"] + last_self_test[1]
+    out = []
+    if ADMIN_CHAT_ID:
+        res = tg("sendMessage", chat_id=ADMIN_CHAT_ID, text="🔧 فحص تلقائي", disable_notification=True)
+        if res.get("ok"):
+            tg("deleteMessage", chat_id=ADMIN_CHAT_ID, message_id=res["result"]["message_id"])
+        out.append("send to admin: " + ("OK (silent, deleted)" if res.get("ok") else f"FAILED ({res.get('description')})"))
+    started = time.time()
+    data, how = ai.read_cv(SELF_TEST_TEXT) if ai.enabled() else (None, "no key")
+    used_ai = bool(data)
+    out.append(f"ai reader: {'OK ' + how if data else 'not used (' + how + ')'} in {time.time() - started:.0f}s")
+    if not data:
+        data = convert_form(parse_form(SELF_TEST_TEXT) or {})
+    d = {"tg_user": {}, "experiences": []}
+    try:
+        apply_cv_data(d, data)
+        if used_ai:
+            d["_ai"] = True
+        out.append(f"read: name={d.get('full_name')}, title={d.get('job_title')}, city={d.get('city')}, "
+                   f"jobs={len(d.get('experiences') or [])}, still to ask={missing_steps(d)}")
+        d["_photo_asked"] = True
+        refresh_languages(d)
+        pdf = build_cv(latinize(d), None)
+        pages = len(re.findall(rb"/Type\s*/Page[^s]", pdf))
+        out.append(f"cv pdf: {'OK' if pdf[:4] == b'%PDF' else 'BAD'} ({len(pdf) // 1024} KB, {pages} page)")
+    except Exception as e:
+        log.exception("self-test failed")
+        out.append(f"cv pipeline: FAILED {e.__class__.__name__}: {str(e)[:150]}")
+    last_self_test[0], last_self_test[1] = time.time(), out
+    return ["self-test:"] + out
 
 
 last_sync = [0.0]
@@ -1578,8 +1653,11 @@ def process(upd):
     try:
         with chat_lock:  # a person's taps/messages are handled in order (no double CVs)
             handle_update(upd)
-    except Exception:
+        stats["handled"] += 1
+    except Exception as e:
         log.exception("update failed")
+        stats["failed"] += 1
+        stats["last_failure"] = f"{e.__class__.__name__}: {str(e)[:150]} ({time.strftime('%H:%M')} UTC)"
 
 
 @app.post(f"/webhook/{SECRET}")
@@ -1591,6 +1669,8 @@ def webhook():
         if upd.get("update_id") in seen_updates:  # Telegram re-sends updates if we were slow
             return "ok"
         seen_updates.append(upd.get("update_id"))
+        stats["received"] += 1
+        stats["last_received"] = time.time()
         cleanup()
         if len(chat_locks) > 5000:
             chat_locks.clear()
