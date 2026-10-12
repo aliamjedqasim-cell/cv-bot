@@ -121,38 +121,38 @@ WELCOME = (
 
 QUESTIONS = {  # step -> (question, optional?)
     "form": ("دز معلوماتك برسالة وحدة 👆", False),
-    "name": ("شنو اسمك الثلاثي؟ ✍️\nمثال: <code>علي حسن كريم</code>", False),
+    "name": ("شنو اسمك الثلاثي؟ ✍️\nمثال: <b>علي حسن كريم</b>", False),
     "name_ok": ("", False),
-    "name_en": ("اكتب اسمك بالحروف الإنگليزية مثل ما تريده يطلع بالسي في\nمثال: <code>Ali Hassan Kareem</code>", False),
+    "name_en": ("اكتب اسمك بالحروف الإنگليزية مثل ما تريده يطلع بالسي في\nمثال: <b>Ali Hassan Kareem</b>", False),
     "job_title": ("شنو الوظيفة اللي تريد تقدم عليها؟\nاختار من الأزرار أو اكتبها", False),
-    "phone": ("رقم هاتفك 📞\nمثال: <code>07701234567</code>", False),
-    "email": ("الإيميل ✉️\nمثال: <code>ali.hassan@gmail.com</code>\nإذا ما عندك اضغط تخطي", True),
+    "phone": ("رقم هاتفك 📞\nمثال: <b>07701234567</b>", False),
+    "email": ("الإيميل ✉️\nمثال: <b>ali.hassan@gmail.com</b>\nإذا ما عندك اضغط تخطي", True),
     "city": ("وين تسكن؟ اختار محافظتك أو اكتبها 📍", False),
     "degree_level": ("شنو شهادتك؟ 🎓", False),
-    "specialty": ("شنو تخصصك؟\nمثال: <code>صيدلة</code> أو <code>تحليلات مرضية</code> أو <code>إدارة أعمال</code>", False),
-    "university": ("اسم الجامعة أو الكلية أو المعهد\nمثال: <code>جامعة بغداد</code>", False),
-    "edu_status": ("إذا متخرج اكتب <b>سنة التخرج</b>، مثل <code>2021</code>\nوإذا بعدك طالب اختار مرحلتك 👇", False),
+    "specialty": ("شنو تخصصك؟\nمثال: <b>صيدلة</b> أو <b>تحليلات مرضية</b> أو <b>إدارة أعمال</b>", False),
+    "university": ("اسم الجامعة أو الكلية أو المعهد\nمثال: <b>جامعة بغداد</b>", False),
+    "edu_status": ("إذا متخرج اكتب <b>سنة التخرج</b>، مثل <b>2021</b>\nوإذا بعدك طالب اختار مرحلتك 👇", False),
     "has_exp": ("عندك خبرة شغل سابقة؟ (حتى لو شهر واحد)", False),
     "job_company": ("💼 اسم الشركة أو المكان اللي اشتغلت بيه\nإذا تعرف اسمها بالإنگليزي أحسن، وإذا لا اكتبه بالعربي\n"
-                    "مثال: <code>Pioneer</code> أو <code>صيدلية النور</code>", False),
+                    "مثال: <b>Pioneer</b> أو <b>صيدلية النور</b>", False),
     "job_role": ("شنو كان عنوانك الوظيفي بهذا الشغل؟\nاختار أو اكتبه", False),
-    "job_place": ("وين كان الشغل؟ (المدينة أو المنطقة)\nمثال: <code>بغداد - المنصور</code>", True),
-    "job_duration": ("شگد اشتغلت بيه؟ ⏳\nاختار، أو اكتب مثل <code>8 أشهر</code> أو <code>2021 - حاليا</code>", True),
+    "job_place": ("وين كان الشغل؟ (المدينة أو المنطقة)\nمثال: <b>بغداد - المنصور</b>", True),
+    "job_duration": ("شگد اشتغلت بيه؟ ⏳\nاختار، أو اكتب مثل <b>8 أشهر</b> أو <b>2021 - حاليا</b>", True),
     "duties": ("شنو كانت مهامك بهذا الشغل؟ 📝\nاكتب كل مهمة بسطر، بالعربي عادي\n\n"
-               "مثال:\n<code>زيارة الأطباء والصيدليات بمنطقة المنصور\nتحقيق التارگت الشهري</code>\n\n"
+               "مثال:\n<b>زيارة الأطباء والصيدليات بمنطقة المنصور\nتحقيق التارگت الشهري</b>\n\n"
                "إذا تريد أكتبلك مهام قوية جاهزة اضغط تخطي", True),
     "more": ("تريد تضيف شغل ثاني؟", False),
     "customers": ("منو الزبائن اللي تعاملت وياهم بشغلك؟\nاختار كل اللي ينطبق، وبعدها اضغط <b>✔️ تم</b>", True),
-    "products": ("شنو المنتجات أو التخصصات اللي سوّقتها؟ 💊\nمثال: <code>فلرات، بوتوكس</code> أو <code>مضادات حيوية</code>\n"
+    "products": ("شنو المنتجات أو التخصصات اللي سوّقتها؟ 💊\nمثال: <b>فلرات، بوتوكس</b> أو <b>مضادات حيوية</b>\n"
                  "إذا ما ينطبق اضغط تخطي", True),
-    "territory": ("شنو المناطق اللي غطيتها بشغلك؟ 🗺️\nمثال: <code>الكرخ والمنصور</code>\nإذا ما ينطبق اضغط تخطي", True),
+    "territory": ("شنو المناطق اللي غطيتها بشغلك؟ 🗺️\nمثال: <b>الكرخ والمنصور</b>\nإذا ما ينطبق اضغط تخطي", True),
     "survey": ("سويت قبل <b>مسح ميداني</b> للأطباء أو العيادات أو الصيدليات بمدينتك؟ 📊", False),
     "licence": ("عندك إجازة سوق وسيارة؟ 🚗", False),
     "skills": ("اختار مهاراتك 💪 (تگدر تختار أكثر من وحدة)\nإذا عندك مهارة ثانية اكتبها برسالة\n"
                "وبعدها اضغط <b>✔️ تم</b>", True),
     "english": ("شگد مستواك باللغة الإنگليزية؟ 🗣️", False),
     "other_langs": ("تعرف لغات ثانية غير العربي والإنگليزي؟\nاختار، أو اكتبها برسالة، وبعدها اضغط <b>✔️ تم</b>", True),
-    "courses": ("عندك دورات أو شهادات؟ 📜\nاكتب كل وحدة بسطر\nمثال: <code>دورة مهارات البيع - 2023</code>\n\n"
+    "courses": ("عندك دورات أو شهادات؟ 📜\nاكتب كل وحدة بسطر\nمثال: <b>دورة مهارات البيع - 2023</b>\n\n"
                 "إذا ما عندك اضغط تخطي", True),
     "photo": ("دز صورة شخصية رسمية واضحة 📸، أو اضغط تخطي", True),
     # job ad
@@ -397,14 +397,21 @@ def show_menu(chat_id):
 def start_cv(chat_id, user):
     new_session(chat_id, "cv", "form", user)
     price = f"\n💰 كلفة الخدمة: <b>{PRICE_IQD:,} دينار</b>، تدفعها بالأخير." if PAID else ""
-    free_text = "أو اكتب معلوماتك <b>براحتك بدون ترتيب</b> 🤖" if ai.enabled() else "وعبّيها"
+    free_text = "🤖 وإذا تحب، اكتب معلوماتك <b>براحتك بدون كليشة</b>، وأنا أفهمها.\n\n" if ai.enabled() else ""
     send(chat_id, "📝 <b>إنشاء سيرة ذاتية</b>\n\n"
-                  f"1️⃣ اضغط على الكليشة اللي تحت حتى تنسخها، {free_text}\n"
-                  "2️⃣ اكتب <b>بالعربي عادي</b>، والخانة اللي ما عندك اتركها فارغة\n"
+                  "1️⃣ اضغط زر <b>📋 انسخ الكليشة</b> اللي تحت\n"
+                  "2️⃣ الصقها برسالة جديدة، وعبّيها <b>بالعربي عادي</b>. الخانة اللي ما عندك اتركها فارغة\n"
                   "3️⃣ دزها برسالة وحدة، وأنا أرتب كلشي وأحوّله للإنگليزي ✨\n\n"
-                  "💼 الخبرات: كل شغل بسطر، مثل:\n<code>شركة النور - مندوب طبي - بغداد - سنتين</code>"
+                  f"{free_text}"
+                  "💼 <b>الخبرات:</b> كل شغل بسطر، مثل:\n<b>شركة النور - مندوب طبي - بغداد - سنتين</b>"
                   f"{price}", remove_keyboard=True)
-    send(chat_id, f"<pre>{esc(TEMPLATE)}</pre>", inline=[[{"text": "🗣️ أفضّل سؤال سؤال", "callback_data": "u:steps"}]])
+    steps_btn = {"text": "🗣️ أفضّل سؤال سؤال", "callback_data": "u:steps"}
+    buttons = [[steps_btn]]
+    if len(TEMPLATE) <= 256:  # Telegram's limit for a copy button
+        buttons = [[{"text": "📋 انسخ الكليشة", "copy_text": {"text": TEMPLATE}}], [steps_btn]]
+    res = send(chat_id, esc(TEMPLATE), inline=buttons)
+    if not res.get("ok") and len(buttons) > 1:  # an old Telegram app without copy buttons: long-press to copy
+        send(chat_id, esc(TEMPLATE), inline=[[steps_btn]])
 
 
 def start_steps(chat_id, sess):
@@ -932,8 +939,8 @@ def handle_cv_answer(chat_id, sess, msg):
     if step in ("name", "name_en"):
         if len(text.split()) < 2 or len(text) > 60 or re.search(r"[\d@#/]", text) or (step == "name_en" and has_ar(text)):
             send(chat_id, "⚠️ اكتب اسمك الكامل (اسمين على الأقل)" +
-                 (" بالحروف الإنگليزية، مثل <code>Ali Hassan Kareem</code>" if step == "name_en"
-                  else "، مثل <code>علي حسن كريم</code>"))
+                 (" بالحروف الإنگليزية، مثل <b>Ali Hassan Kareem</b>" if step == "name_en"
+                  else "، مثل <b>علي حسن كريم</b>"))
             return
         if has_ar(text):
             d["full_name"], _ = name_en(text)
@@ -968,12 +975,12 @@ def handle_cv_answer(chat_id, sess, msg):
     elif step == "phone":
         phone = re.sub(r"[^\d+\- ]", "", text.translate(AR_DIGITS)).strip(" -")
         if not 8 <= len(re.sub(r"\D", "", phone)) <= 15 or "+" in phone[1:]:
-            send(chat_id, "⚠️ الرقم مو صحيح، اكتبه مثل <code>07701234567</code>")
+            send(chat_id, "⚠️ الرقم مو صحيح، اكتبه مثل <b>07701234567</b>")
             return
         d["phone"] = format_phone(phone)
     elif step == "email":
         if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[A-Za-z]{2,}", text) or has_ar(text):
-            send(chat_id, "⚠️ الإيميل مو صحيح، مثال: <code>name@gmail.com</code>\nأو اضغط تخطي", keyboard=[[SKIP]])
+            send(chat_id, "⚠️ الإيميل مو صحيح، مثال: <b>name@gmail.com</b>\nأو اضغط تخطي", keyboard=[[SKIP]])
             return
         d["email"] = text.lower()
     elif step == "city":
@@ -1014,7 +1021,7 @@ def handle_cv_answer(chat_id, sess, msg):
         else:
             stage = pick(STAGE_BUTTONS, text) or stage_from_text(val)
             if not stage:
-                send(chat_id, "⚠️ اكتب سنة التخرج 4 أرقام مثل <code>2021</code>، أو اختار مرحلتك من الأزرار",
+                send(chat_id, "⚠️ اكتب سنة التخرج 4 أرقام مثل <b>2021</b>، أو اختار مرحلتك من الأزرار",
                      keyboard=KEYBOARDS["edu_status"])
                 return
             d["edu_status"] = stage
