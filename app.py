@@ -1483,6 +1483,39 @@ def health():
     return "CV bot is running ✅"
 
 
+@app.get("/health")
+def health_details():
+    """Public self-check (no secrets shown): version, token, webhook, settings. Re-links the webhook if needed."""
+    lines = [f"version: {(env('RENDER_GIT_COMMIT') or 'unknown')[:7]}"]
+    me = tg("getMe")
+    token_ok = bool(me.get("ok"))
+    lines.append("bot token: " + (f"OK @{(me.get('result') or {}).get('username')}" if token_ok
+                                   else f"PROBLEM ({me.get('description') or 'no answer from Telegram'})"))
+    if token_ok:
+        expected = f"{PUBLIC_URL}/webhook/{SECRET}"
+        wh = tg("getWebhookInfo").get("result") or {}
+        url = wh.get("url") or ""
+        relinked = False
+        if url != expected and PUBLIC_URL:
+            relinked = bool(tg("setWebhook", url=expected, secret_token=SECRET, max_connections=10,
+                               allowed_updates=["message", "callback_query"]).get("ok"))
+        host = re.sub(r"^https?://([^/]+).*$", r"\1", url) if url else "none"
+        lines.append(f"webhook: {'OK' if url == expected else 'WRONG'} (points to {host})"
+                     + (" -> fixed now" if relinked else ""))
+        lines.append(f"waiting updates: {wh.get('pending_update_count', 0)}")
+        if wh.get("last_error_message"):
+            ago = int((time.time() - (wh.get("last_error_date") or time.time())) / 60)
+            lines.append(f"last delivery error: {wh['last_error_message']} ({ago} min ago)")
+    lines += [f"public url: {PUBLIC_URL or 'MISSING'}",
+              f"admin id: {'set' if ADMIN_CHAT_ID else 'MISSING'}",
+              f"payment: {'on' if PAID else 'off (free)'}",
+              f"channel: {'set' if CHANNEL_ID else 'not set'}",
+              f"ai key: {'set' if ai.enabled() else 'not set'}"]
+    if request.args.get("ai") == "1":
+        lines.append("ai test: " + ai.ping())
+    return "\n".join(lines), 200, {"Content-Type": "text/plain; charset=utf-8"}
+
+
 workers = ThreadPoolExecutor(max_workers=6)
 chat_locks = {}
 
