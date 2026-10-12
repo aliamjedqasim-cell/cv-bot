@@ -1520,7 +1520,8 @@ def health_details():
               f"ai key: {'set' if ai.enabled() else 'not set'}"]
     if request.args.get("ai") == "1":
         lines.append("ai test: " + ai.ping())
-    return "\n".join(lines), 200, {"Content-Type": "text/plain; charset=utf-8"}
+    return ("<!doctype html><meta charset='utf-8'><meta name='viewport' content='width=device-width'>"
+            "<title>CV bot check</title><pre style='font-size:16px'>" + esc("\n".join(lines)) + "</pre>")
 
 
 workers = ThreadPoolExecutor(max_workers=6)
