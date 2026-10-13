@@ -244,9 +244,9 @@ def next_step(sess, step):
 
 
 # ============================================================ telegram API
-def tg(method, **params):
+def tg(method, _timeout=30, **params):
     try:
-        r = http.post(f"{API}/{method}", json=params, timeout=30)
+        r = http.post(f"{API}/{method}", json=params, timeout=_timeout)
         res = r.json()
         if not res.get("ok"):
             log.warning("telegram %s failed: %s", method, res.get("description"))
@@ -1516,13 +1516,16 @@ def robots():
 def health_details():
     """Public self-check (no secrets shown): version, token, webhook, settings. Re-links the webhook if needed."""
     lines = [f"version: {(env('RENDER_GIT_COMMIT') or 'unknown')[:7]}"]
-    me = tg("getMe")
+    t0 = time.time()
+    me = tg("getMe", _timeout=10)
+    tg_seconds = time.time() - t0
     token_ok = bool(me.get("ok"))
     lines.append("bot token: " + (f"OK @{(me.get('result') or {}).get('username')}" if token_ok
-                                   else f"PROBLEM ({me.get('description') or 'no answer from Telegram'})"))
+                                   else f"PROBLEM ({me.get('description') or 'no answer from Telegram'})")
+                 + f" (Telegram answered in {tg_seconds:.1f}s)")
     if token_ok:
         expected = f"{PUBLIC_URL}/webhook/{SECRET}"
-        wh = tg("getWebhookInfo").get("result") or {}
+        wh = tg("getWebhookInfo", _timeout=10).get("result") or {}
         url = wh.get("url") or ""
         relinked = False
         if url != expected and PUBLIC_URL:
