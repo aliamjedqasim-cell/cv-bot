@@ -1,0 +1,36 @@
+# Makes the narration for the course videos (natural Arabic voice) whenever a lesson script changes,
+# and saves the MP3 files back into courses/audio. The videos themselves are rendered from these.
+name: course audio
+on:
+  push:
+    branches: [main]
+    paths: ["courses/scripts/**", "courses/tts.py", "courses/lesson.py"]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: course-audio
+  cancel-in-progress: false
+jobs:
+  voice:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install "edge-tts>=6.1,<8"
+      - name: Make the narration
+        working-directory: courses
+        run: python tts.py
+      - name: Save the audio
+        run: |
+          git config user.name "course-audio-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add courses/audio
+          if git diff --cached --quiet; then echo "no new audio"; exit 0; fi
+          git commit -m "Course narration audio"
+          git pull --rebase origin main
+          git push
+          echo "::notice title=audio::saved $(git diff --stat HEAD~1 | tail -1)"
