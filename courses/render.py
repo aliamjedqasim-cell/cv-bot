@@ -201,6 +201,53 @@ def frame(base, lesson, seg, revealed, active, sub, progress, anim=None, seg_no=
 
 
 # ---------------------------------------------------------------- timeline
+def chunks(sentence, limit=13):
+    """Long sentences become shorter subtitle pieces (split at commas, then by words)."""
+    words = sentence.split()
+    if len(words) <= limit + 3:
+        return [sentence]
+    clauses, cur = [], []
+    for w in words:
+        cur.append(w)
+        if w.endswith(("،", ",", "؛", ":")):
+            clauses.append(cur)
+            cur = []
+    if cur:
+        clauses.append(cur)
+    out, cur = [], []
+    for c in clauses:
+        if cur and len(cur) + len(c) > limit:
+            out.append(cur)
+            cur = []
+        while len(c) > limit + 3:
+            out.append(c[:limit])
+            c = c[limit:]
+        cur += c
+    if cur:
+        if out and len(cur) < 4:
+            out[-1] += cur
+        else:
+            out.append(cur)
+    return [" ".join(x) for x in out]
+
+
+def spoken(si, revealed, active, sentence, seg_no, data):
+    """One sentence as hold events: the audio is shared out over its subtitle pieces by word count."""
+    pieces = chunks(sentence)
+    total_words = sum(len(p.split()) for p in pieces)
+    events, start = [], 0
+    for i, piece in enumerate(pieces):
+        if i == len(pieces) - 1:
+            part = data[start:]
+        else:
+            size = int(len(data) * len(piece.split()) / total_words) // 2 * 2
+            part = data[start:start + size]
+            start += size
+        extra = b"\x00\x00" * int(RATE * PAUSE) if i == len(pieces) - 1 else b""
+        events.append(("hold", (si, revealed, active, piece, seg_no), (len(part) + len(extra)) / (2 * RATE), part + extra))
+    return events
+
+
 def pcm(mp3):
     return subprocess.run(["ffmpeg", "-v", "error", "-i", str(mp3), "-ar", str(RATE), "-ac", "1", "-f", "s16le", "-"],
                           capture_output=True, check=True).stdout
@@ -223,8 +270,7 @@ def build(stem):
         if seg["type"] in ("title", "outro"):
             events.append(("anim", (si, 0, -1, "title" if seg["type"] == "title" else "outro", seg_no), 0.7, silence(0.7)))
             for s in sentences(seg.get("say")):
-                data = pcm(audio_dir / manifest[s])
-                events.append(("hold", (si, 0, -1, s, seg_no), len(data) / (2 * RATE) + PAUSE, data + silence(PAUSE)))
+                events += spoken(si, 0, -1, s, seg_no, pcm(audio_dir / manifest[s]))
             if seg["type"] == "outro":
                 events.append(("hold", (si, 0, -1, "", seg_no), 2.2, silence(2.2)))
             continue
@@ -233,19 +279,14 @@ def build(stem):
             for i in range(len(seg["items"])):
                 events.append(("anim", (si, i + 1, -1, "point", seg_no), 0.22, silence(0.22)))
             for s in sentences(seg.get("say")):
-                data = pcm(audio_dir / manifest[s])
-                events.append(("hold", (si, len(seg["items"]), -1, s, seg_no), len(data) / (2 * RATE) + PAUSE,
-                               data + silence(PAUSE)))
+                events += spoken(si, len(seg["items"]), -1, s, seg_no, pcm(audio_dir / manifest[s]))
         else:
             for s in sentences(seg.get("say")):
-                data = pcm(audio_dir / manifest[s])
-                events.append(("hold", (si, 0, -1, s, seg_no), len(data) / (2 * RATE) + PAUSE, data + silence(PAUSE)))
+                events += spoken(si, 0, -1, s, seg_no, pcm(audio_dir / manifest[s]))
             for pi, point in enumerate(seg["points"]):
                 events.append(("anim", (si, pi + 1, pi, "point", seg_no), ANIM, silence(ANIM)))
                 for s in sentences(point.get("say")):
-                    data = pcm(audio_dir / manifest[s])
-                    events.append(("hold", (si, pi + 1, pi, s, seg_no), len(data) / (2 * RATE) + PAUSE,
-                                   data + silence(PAUSE)))
+                    events += spoken(si, pi + 1, pi, s, seg_no, pcm(audio_dir / manifest[s]))
         events.append(("hold", (si, len(seg.get("points") or seg.get("items") or []), -1, "", seg_no), SEG_PAUSE,
                        silence(SEG_PAUSE)))
     total = sum(e[2] for e in events)

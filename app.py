@@ -2448,6 +2448,10 @@ def self_test():
         img = extras.preview_image(pdf)
         out.append("preview image (before payment): " + (f"OK ({len(img) // 1024} KB)" if img else "FAILED (no PDF renderer)"))
         out.append("face detector for photos: " + ("ready" if photos.detector_ready() else "missing (uses a centred crop)"))
+        vids = {k: sum(os.path.exists(os.path.join(COURSE_DIR, "videos", f"{k}-{n}.mp4"))
+                       for n in range(1, len(course_lessons(k)) + 1)) for k in COURSES}
+        out.append("course videos: " + ", ".join(f"{k} {v}/{len(course_lessons(k))}" for k, v in vids.items())
+                   + f" | course price: {COURSE_PRICE or 'not set (admin request)'}")
         ats, cover = extras.build_ats_cv(latinize(d)), extras.build_cover_letter(latinize(d), None)
         out.append(f"gift files: ATS CV {'OK' if ats[:4] == b'%PDF' else 'BAD'}, cover letter {'OK' if cover[:4] == b'%PDF' else 'BAD'}")
         if used_ai:
