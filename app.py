@@ -16,6 +16,7 @@ Environment variables (Render -> Environment). Only BOT_TOKEN is required:
     PUBLIC_URL        only needed outside Render (Render provides RENDER_EXTERNAL_URL)
 """
 import hashlib
+import hmac
 import io
 import json
 import logging
@@ -135,30 +136,48 @@ WELCOME = (
     "اختار شنو تحتاج 👇\n\n"
     "🔒 <i>معلوماتك تُستخدم فقط لإعداد سيرتك الذاتية وترشيحك لفرص عمل مناسبة، وما تنشر بشكل عام.</i>"
 )
-COURSES_TEXT = (
-    f"🎓 <b>كورسات {COMPANY}</b>\n"
-    "كورسات عملية تجهزك للمقابلة ولأول يوم شغل 💪\n\n"
-    "🎤 <b>كورس المقابلات الوظيفية</b>\n"
-    "• شلون تعرّف نفسك بأول دقيقة وتترك انطباع قوي\n"
-    "• أشهر أسئلة شركات الأدوية والتجميل، وشلون تجاوب عليها\n"
-    "• المظهر ولغة الجسد وطريقة الكلام\n"
-    "• شلون تتفاوض على الراتب والعرض الوظيفي\n"
-    "• مقابلة تجريبية ويا ملاحظات على أدائك\n\n"
-    "💼 <b>كورس المندبة الطبية والمبيعات</b>\n"
-    "• شنو شغل المندوب العلمي يومياً، وشنو تنتظر منه الشركة\n"
-    "• التخطيط للزيارات وتغطية المنطقة\n"
-    "• زيارة الطبيب والصيدلي: البداية، عرض المنتج، وإغلاق الزيارة\n"
-    "• التعامل ويا الاعتراضات والمنافسين\n"
-    "• التارگت والتقارير ومتابعة الأداء\n\n"
-    "✅ <b>شنو تحصل من الكورس:</b>\n"
-    "• تدريب عملي بأمثلة من السوق العراقي، مو بس كلام نظري\n"
-    "• تمارين وتطبيق على مواقف حقيقية\n"
-    "• مراجعة للسي في مالتك\n"
-    "• ثقة أكبر بالمقابلة وبالشغل الميداني\n\n"
-    "📌 المدة والمواعيد والسعر تبلغك بيها الإدارة بعد التسجيل.\n\n"
-    "سجّل اهتمامك 👇"
-)
-COURSE_CHOICES = [("int", "🎤 المقابلات الوظيفية"), ("rep", "💼 المندبة الطبية والمبيعات"), ("all", "📚 الاثنين")]
+COURSE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "courses")
+COURSE_PRICE = int(re.sub(r"\D", "", env("COURSE_PRICE_IQD")) or 0)  # one course; empty -> the admin tells the price
+COURSES = {"interviews": "🎤 كورس المقابلات الوظيفية", "medrep": "💼 كورس المندبة الطبية والمبيعات"}
+
+
+def course_lessons(course):
+    """Lesson titles from courses/scripts/<course>-<n>.json, in order."""
+    out = []
+    for n in range(1, 20):
+        path = os.path.join(COURSE_DIR, "scripts", f"{course}-{n}.json")
+        if not os.path.exists(path):
+            break
+        try:
+            with open(path, encoding="utf-8") as f:
+                out.append(json.load(f).get("title") or f"الدرس {n}")
+        except Exception:
+            out.append(f"الدرس {n}")
+    return out
+
+
+def courses_text():
+    lines = [f"🎓 <b>كورسات {COMPANY}</b>",
+             "🎬 <b>فيديوهات تعليمية قصيرة</b> بشكل ريلز، بصوت وشرح وتصميم ديجيتال، "
+             "كل درس 3 دقايق تقريباً، وتشوفها داخل البوت وترجعلها متى ما تريد.\n"]
+    for key, title in COURSES.items():
+        lessons = course_lessons(key)
+        lines.append(f"<b>{title}</b> ({len(lessons)} دروس)")
+        lines += [f"{i}. {esc(t)}" for i, t in enumerate(lessons, 1)]
+        lines.append("")
+    lines += ["✅ <b>شنو تحصل:</b>",
+              "• شرح عملي بأمثلة من سوق العمل العراقي",
+              "• خطوات واضحة تطبقها بالمقابلة وبالشغل الميداني",
+              "• الدروس تبقى عندك بالبوت، تعيدها متى ما تريد", ""]
+    lines.append(f"💰 سعر الكورس الواحد: <b>{COURSE_PRICE:,} دينار</b>" if COURSE_PRICE and PAID
+                 else "💰 السعر وطريقة الدفع تبلغك بيهن الإدارة بعد ما تختار.")
+    lines.append("\nاختار الكورس 👇")
+    return "\n".join(lines)
+
+
+COURSES_TEXT = courses_text  # kept for older callers
+COURSE_CHOICES = [("interviews", "🎤 كورس المقابلات"), ("medrep", "💼 كورس المندبة"), ("all", "📚 الكورسين")]
+video_ids = {}  # (course, n) -> Telegram file_id after the first upload
 
 QUESTIONS = {  # step -> (question, optional?)
     "form": ("دز معلوماتك برسالة وحدة 👆", False),
@@ -1732,8 +1751,9 @@ def remind_admin(chat_id, minutes):
     p = pending_payments.get(chat_id)
     if not p or not ADMIN_CHAT_ID:
         return
-    send(ADMIN_CHAT_ID, f"⏰ <b>تذكير:</b> {esc(p.get('name') or 'متقدم')} دافع وينتظر السي في من {minutes} دقيقة.\n"
-                        "تأكد من التحويل بتطبيق Qi Card واضغط ✅ تحت السي في مالته.", reply_to=p.get("msg"))
+    what = p.get("what", "السي في")
+    send(ADMIN_CHAT_ID, f"⏰ <b>تذكير:</b> {esc(p.get('name') or 'متقدم')} دافع وينتظر {what} من {minutes} دقيقة.\n"
+                        "تأكد من التحويل بتطبيق Qi Card واضغط ✅ تحت رسالة الدفع مالته.", reply_to=p.get("msg"))
 
 
 def finish_cv(chat_id, sess):
@@ -1878,6 +1898,122 @@ def submit_ad(chat_id, sess):
     send(chat_id, "✅ وصل طلبكم للإدارة.\nراح نتواصل وياكم هنا، ونرشحلكم أنسب المتقدمين 🤍")
 
 
+# ================================================================ courses
+def course_sig(chat_id, course):
+    """Proof that this person may watch this course, carried inside the lesson buttons (survives restarts)."""
+    return hmac.new(SECRET.encode(), f"{chat_id}:{course}".encode(), hashlib.sha256).hexdigest()[:10]
+
+
+def lesson_buttons(chat_id, course, n, total):
+    sig = course_sig(chat_id, course)
+    row = []
+    if n < total:
+        row.append({"text": f"▶️ الدرس {n + 1}", "callback_data": f"v:{course}:{n + 1}:{sig}"})
+    row.append({"text": "📚 كل الدروس", "callback_data": f"v:{course}:0:{sig}"})
+    return [row]
+
+
+def send_lesson_list(chat_id, course):
+    lessons = course_lessons(course)
+    sig = course_sig(chat_id, course)
+    send(chat_id, f"📚 <b>{COURSES[course]}</b>\nاختار الدرس 👇",
+         inline=[[{"text": f"{i}. {t}", "callback_data": f"v:{course}:{i}:{sig}"}] for i, t in enumerate(lessons, 1)])
+
+
+def send_lesson(chat_id, course, n):
+    lessons = course_lessons(course)
+    if not 1 <= n <= len(lessons):
+        return False
+    caption = f"🎓 <b>{COURSES[course]}</b>\nالدرس {n} من {len(lessons)}: <b>{esc(lessons[n - 1])}</b>"
+    markup = {"inline_keyboard": lesson_buttons(chat_id, course, n, len(lessons))}
+    tg("sendChatAction", chat_id=chat_id, action="upload_video")
+    if (course, n) in video_ids:
+        res = tg("sendVideo", chat_id=chat_id, video=video_ids[(course, n)], caption=caption, parse_mode="HTML",
+                 supports_streaming=True, reply_markup=markup)
+        if res.get("ok"):
+            return True
+    path = os.path.join(COURSE_DIR, "videos", f"{course}-{n}.mp4")
+    if not os.path.exists(path):
+        send(chat_id, f"🎬 الدرس {n} قيد التجهيز، راح يوصلك قريباً 🤍", inline=markup["inline_keyboard"])
+        return True
+    try:
+        with open(path, "rb") as f:
+            r = http.post(f"{API}/sendVideo", timeout=120, data={
+                "chat_id": str(chat_id), "caption": caption, "parse_mode": "HTML", "supports_streaming": "true",
+                "width": "720", "height": "1280", "reply_markup": json.dumps(markup)},
+                files={"video": (f"{course}-{n}.mp4", f, "video/mp4")}).json()
+    except Exception as e:
+        log.warning("lesson upload failed: %s", e)
+        return False
+    if r.get("ok"):
+        video_ids[(course, n)] = (r["result"].get("video") or r["result"].get("document") or {}).get("file_id")
+        return True
+    log.warning("sendVideo failed: %s", r.get("description"))
+    return False
+
+
+def unlock_course(chat_id, course):
+    lessons = course_lessons(course)
+    res = send(chat_id, f"🎉 <b>انفتحلك {COURSES[course]}</b>\n{len(lessons)} دروس فيديو، تشوفها هنا وترجعلها متى ما تريد.\n"
+                        "هذا الدرس الأول 👇")
+    if not res.get("ok"):
+        return False
+    send_lesson(chat_id, course, 1)
+    return True
+
+
+def start_course_purchase(chat_id, user, course):
+    if course not in COURSES and course != "all":
+        return
+    label = "الكورسين" if course == "all" else COURSES[course]
+    if not ADMIN_CHAT_ID:
+        send(chat_id, "عذراً، الخدمة مو متوفرة هسه 🙏")
+        return
+    if COURSE_PRICE and PAID:
+        price = COURSE_PRICE * (2 if course == "all" else 1)
+        sess = new_session(chat_id, "course", "course_pay", user)
+        sess["data"]["course"] = course
+        name = f"الاسم: <b>{esc(QI_CARD_NAME)}</b>\n" if QI_CARD_NAME else ""
+        send(chat_id, f"🎓 <b>{esc(label)}</b>\n\n💰 السعر: <b>{price:,} دينار عراقي</b>\n\n"
+                      f"💳 حوّل على بطاقة <b>Qi Card</b>:\n{name}رقم البطاقة: <code>{esc(QI_CARD_NUMBER)}</code>\n\n"
+                      "📸 بعدها دز <b>صورة تأكيد الدفع</b> هنا، وأول ما نتأكد ينفتحلك الكورس بالبوت مباشرةً.")
+        return
+    # no course price set yet: the admin arranges it and opens the course with one button
+    send(ADMIN_CHAT_ID, f"🎓 <b>طلب اشتراك بالكورسات</b>\n👤 {user_handle(user, chat_id)}\n📚 {esc(label)}\n\n"
+                        "<i>رد على هذي الرسالة حتى تبلغه بالسعر. بعد ما يدفع اضغط ✅ وينفتحله الكورس.</i>",
+         inline=[[{"text": "✅ افتح الكورس له", "callback_data": f"kc:{chat_id}:{course}"},
+                  {"text": "❌ رفض", "callback_data": f"kn:{chat_id}:{course}"}]])
+    send(chat_id, f"✅ وصل طلبك لـ <b>{esc(label)}</b>.\nالإدارة راح تبلغك هنا بالسعر وطريقة الدفع، "
+                  "وأول ما تدفع ينفتحلك الكورس بالبوت 🤍")
+
+
+def handle_course_payment(chat_id, sess, msg):
+    is_image = msg.get("photo") or (msg.get("document") or {}).get("mime_type", "").startswith(("image/", "application/pdf"))
+    if not is_image:
+        send(chat_id, "📸 دز <b>صورة تأكيد الدفع</b> هنا حتى ينفتحلك الكورس.")
+        return
+    course = sess["data"].get("course")
+    label = "الكورسين" if course == "all" else COURSES.get(course, "كورس")
+    res = forward_to_admin(chat_id, msg, f"🧾 <b>دفع كورس</b>: {esc(label)}\n{user_handle(sess['data'].get('tg_user'), chat_id)}\n"
+                                         "⚠️ تأكد من وصول المبلغ بتطبيق Qi Card قبل ما تفتح الكورس")
+    sessions.pop(chat_id, None)
+    if not res.get("ok"):
+        send(chat_id, "صار خطأ بالإرسال 😔 دز الصورة مرة ثانية")
+        return
+    mid = (res.get("result") or {}).get("message_id")
+    tg("editMessageReplyMarkup", chat_id=ADMIN_CHAT_ID, message_id=mid, reply_markup={"inline_keyboard": [
+        [{"text": "✅ الدفع وصل، افتح الكورس", "callback_data": f"kc:{chat_id}:{course}"}],
+        [{"text": "❌ الدفع ما وصل", "callback_data": f"kn:{chat_id}:{course}"}]]})
+    pending_payments[chat_id] = {"t": time.time(), "msg": mid, "what": "الكورس",
+                                 "name": (sess["data"].get("tg_user") or {}).get("first_name")}
+    for minutes in (10, 30):
+        timer = threading.Timer(minutes * 60, remind_admin, args=(chat_id, minutes))
+        timer.daemon = True
+        timer.start()
+    send(chat_id, "✅ <b>استلمنا صورة الدفع، شكراً إلك 🤍</b>\n⏳ دا نتأكد من وصول المبلغ (التأكد يدوي)، "
+                  f"وأول ما يتأكد ينفتحلك الكورس هنا {PAYMENT_WAIT} 🎓")
+
+
 # ============================================================ callbacks
 def handle_callback(cq):
     data = cq.get("data", "")
@@ -1908,8 +2044,9 @@ def handle_callback(cq):
         elif data == "m:cv":
             start_cv(chat_id, user)
         elif data == "m:courses":
-            send(chat_id, COURSES_TEXT, inline=[[{"text": "✋ سجّلني بالكورسات", "callback_data": "k:join"}],
-                                                [{"text": "↩️ القائمة", "callback_data": "k:menu"}]])
+            send(chat_id, courses_text(), inline=[[{"text": label, "callback_data": f"k:buy:{key}"}]
+                                                  for key, label in COURSE_CHOICES]
+                 + [[{"text": "↩️ القائمة", "callback_data": "k:menu"}]])
         elif data == "m:ad":
             new_session(chat_id, "ad", "ad_company", user)
             ask(chat_id, "ad_company")
@@ -1926,16 +2063,18 @@ def handle_callback(cq):
         drop_buttons()
         if data == "k:menu":
             show_menu(chat_id)
-        elif data == "k:join":
-            send(chat_id, "أي كورس يهمك؟ 👇", inline=[[{"text": label, "callback_data": f"k:{key}"}]
-                                                     for key, label in COURSE_CHOICES])
+        elif data.startswith("k:buy:"):
+            start_course_purchase(chat_id, user, data[6:])
+        return
+    if data.startswith("v:"):  # a lesson: v:<course>:<n>:<signature>
+        parts = data.split(":")
+        if len(parts) == 4 and parts[1] in COURSES and parts[2].isdigit() and course_sig(chat_id, parts[1]) == parts[3]:
+            if int(parts[2]) == 0:
+                send_lesson_list(chat_id, parts[1])
+            else:
+                send_lesson(chat_id, parts[1], int(parts[2]))
         else:
-            label = dict(COURSE_CHOICES).get(data[2:], "كورس")
-            if ADMIN_CHAT_ID:
-                send(ADMIN_CHAT_ID, f"🎓 <b>طلب تسجيل بالكورسات</b>\n👤 {user_handle(user, chat_id)}\n"
-                                    f"📚 الكورس: {esc(label)}\n\n<i>(رد على هذي الرسالة حتى يوصل ردك للشخص)</i>")
-            send(chat_id, f"✅ سجّلنا اهتمامك بـ <b>{esc(label)}</b>.\n"
-                          "الإدارة راح تتواصل وياك هنا بالمواعيد والتفاصيل قريباً 🤍")
+            send(chat_id, "🔒 هذا الدرس للمشتركين بالكورس. تگدر تشترك من /start ثم 🎓 الكورسات")
         return
 
     # ---- applicant buttons (need a live session)
@@ -2034,6 +2173,22 @@ def handle_callback(cq):
             send(target, text)
             status = "❌ مرفوض"
         tg("editMessageCaption", chat_id=chat_id, message_id=mid, caption=f"{caption}\n\n{status}"[:1024])
+    elif action in ("kc", "kn"):
+        course = parts[2] if len(parts) > 2 else ""
+        drop_buttons()
+        pending_payments.pop(target, None)
+        base = msg.get("text") or msg.get("caption") or ""
+        if action == "kc":
+            keys = list(COURSES) if course == "all" else [course] if course in COURSES else []
+            ok = all(unlock_course(target, k) for k in keys) if keys else False
+            status = "✅ انفتح الكورس للشخص" if ok else "⚠️ ما گدرت أدزله (يمكن حاظر البوت)"
+        else:
+            send(target, "❌ ما گدرنا نتأكد من الدفع للكورس.\nإذا حوّلت المبلغ، اكتب /start واختار التواصل ويانا.")
+            status = "❌ مرفوض"
+        if msg.get("caption") is not None:
+            tg("editMessageCaption", chat_id=chat_id, message_id=mid, caption=f"{base}\n\n{status}"[:1024])
+        else:
+            tg("editMessageText", chat_id=chat_id, message_id=mid, text=f"{base}\n\n{status}"[:4000])
     elif action in ("adok", "adno"):
         original = (msg.get("text") or "").split("\n\n")[0]
         drop_buttons()
@@ -2138,6 +2293,8 @@ def handle_update(upd):
         handle_cv_answer(chat_id, sess, msg)
     elif sess["mode"] == "ad":
         handle_ad_answer(chat_id, sess, msg)
+    elif sess["mode"] == "course":
+        handle_course_payment(chat_id, sess, msg)
     elif sess["mode"] == "contact":
         res = forward_to_admin(chat_id, msg, f"💬 <b>رسالة من</b> {user_handle(sess['data'].get('tg_user'), chat_id)}\n"
                                              "<i>(رد على هذي الرسالة حتى يوصل ردك للشخص)</i>")
