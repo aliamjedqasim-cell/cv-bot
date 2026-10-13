@@ -1756,25 +1756,43 @@ def fresh_connections():
 if hasattr(os, "register_at_fork"):
     os.register_at_fork(after_in_child=fresh_connections)
 
+def watchdog():
+    """If an outside connection ever hangs past its own timeout (a stuck process), restart this worker:
+    gunicorn starts a fresh one in a second. A slow or unreachable Telegram does not count, only a hang."""
+    while True:
+        time.sleep(300)
+        probe = threading.Thread(target=tg, args=("getMe",), kwargs={"_timeout": 20}, daemon=True)
+        probe.start()
+        probe.join(90)
+        if probe.is_alive():
+            log.critical("outside connections are stuck; restarting this worker")
+            os._exit(1)
+
+
 started_in = [None]
 
 
-@app.before_request
-def start_background_jobs():
-    """Background jobs start in the process that answers requests (not in gunicorn's parent)."""
-    if started_in[0] == os.getpid():
-        return
+def start_background():
+    """Background jobs: only in the process that answers requests, never in gunicorn's parent.
+    (Render runs gunicorn with --preload; network activity before the fork could leave the worker stuck.)"""
     with lock:
         if started_in[0] == os.getpid():
             return
         started_in[0] = os.getpid()
-    if (PUBLIC_URL and env("DISABLE_WEBHOOK_SETUP") != "1"
-            and os.environ.get("KEEP_AWAKE", "on").strip().lower() not in ("0", "off", "no", "false")):
+    if env("DISABLE_WEBHOOK_SETUP") == "1":
+        return
+    threading.Thread(target=register_webhook, daemon=True, name="register-webhook").start()
+    threading.Thread(target=watchdog, daemon=True, name="watchdog").start()
+    if PUBLIC_URL and os.environ.get("KEEP_AWAKE", "on").strip().lower() not in ("0", "off", "no", "false"):
         threading.Thread(target=keep_awake, daemon=True, name="keep-awake").start()
 
 
-if env("DISABLE_WEBHOOK_SETUP") != "1":
-    threading.Thread(target=register_webhook, daemon=True).start()
+@app.before_request
+def start_background_jobs():
+    if started_in[0] != os.getpid():  # fallback when gunicorn.conf.py's post_fork did not run
+        start_background()
+
 
 if __name__ == "__main__":
+    start_background()
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8000)))

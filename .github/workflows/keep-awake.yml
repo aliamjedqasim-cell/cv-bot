@@ -1,46 +1,15 @@
-# Free outside visitor for the Render free plan (the server sleeps after 15 minutes without visitors).
-# GitHub starts scheduled runs late (often 10-30 minutes apart), so one run at a time stays ~40 minutes
-# and visits every 4 minutes; the next scheduled run waits in line and starts as soon as it ends.
-# After every update pushed to main, the deploy job asks the bot to install the new version (/sync).
+# Paused for a few minutes: the running server is stuck and must fall asleep once so it restarts clean.
+# This only cancels the visitor runs that are still going. The full version comes back right after.
 name: keep bot awake
 on:
-  schedule:
-    - cron: "*/5 * * * *"
   push:
     branches: [main]
-  workflow_dispatch:
 jobs:
-  deploy:
-    if: github.event_name == 'push'
+  stop-visits:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - name: Check the running version first
-        run: |
-          curl -sS -m 120 -o /dev/null https://cv-bot-o61r.onrender.com/ || true
-          out=$(curl -sS -m 150 -w " [http %{http_code}, %{time_total}s]" https://cv-bot-o61r.onrender.com/health 2>&1 | sed 's/<[^>]*>/ /g' | tr -s ' \n' ' ' | cut -c1-900)
-          echo "::notice title=health before update::${out:-empty}"
-      - name: Install the new version
-        run: |
-          sleep 5
-          result=$(curl -sS -m 120 "https://cv-bot-o61r.onrender.com/sync?run=${{ github.run_id }}" | sed 's/<[^>]*>/ /g' | tr -s ' \n' ' ')
-          echo "::notice title=sync::$result"
-  visit:
-    if: github.event_name != 'push'
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 2
     concurrency:
       group: keep-awake
-      cancel-in-progress: false
+      cancel-in-progress: true
     steps:
-      - name: Visit the bot every 4 minutes
-        run: |
-          for i in $(seq 1 11); do
-            code=$(curl -sS -m 120 -o /dev/null -w "%{http_code}" https://cv-bot-o61r.onrender.com/ || echo "error")
-            echo "visit $i: $code"
-            if [ "$i" -eq 1 ] || [ "$i" -eq 11 ]; then
-              health=$(curl -sS -m 150 -w " [http %{http_code}, %{time_total}s]" https://cv-bot-o61r.onrender.com/health 2>&1 | sed 's/<[^>]*>/ /g' | tr -s ' \n' ' ' | cut -c1-900)
-              echo "::notice title=health visit $i::${health:-empty}"
-            fi
-            if [ "$i" -lt 11 ]; then sleep 240; fi
-          done
+      - run: echo "visits paused"
