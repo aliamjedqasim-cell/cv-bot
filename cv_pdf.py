@@ -1,8 +1,9 @@
 """Builds an English CV (PDF) in the layout of Ali's reference CV.
 
 Dark header with a round photo, name and job title; a contact row with icons;
-then Profile, Skills (3 columns), Professional Experience, Career Objective,
-Education, Courses (optional) and Languages, separated by thin rules.
+then (in the order HR reviewers expect) Professional Summary, Professional Experience,
+Key Achievements, Core Skills (3 columns), Education, Courses, Additional Information and
+Languages, separated by thin rules.
 
 Usage:
     pdf_bytes = build_cv(data, photo_bytes=None)
@@ -100,8 +101,15 @@ GENERAL_SKILLS = [
     "Fast Learning", "Organization & Planning", "Customer Service Skills",
     "Professional Ethics", "Adaptability", "Presentation Skills",
 ]
+MEDICAL_SALES_SKILLS = [
+    "Doctor & Pharmacy Relationship Building", "Product Presentation", "Sales Target Planning & Tracking",
+    "Visit Planning & Territory Coverage", "Market & Competitor Awareness", "Negotiation & Closing",
+    "Strong Communication Skills", "Customer Service Skills", "Time Management",
+    "Teamwork Collaboration", "Working Under Pressure", "Fast Learning",
+]
 DEFAULT_SKILLS = SALES_SKILLS
-FIELD_WORDS = ("sales", "representative", "rep", "supervisor", "marketing", "promoter", "business development")
+FIELD_WORDS = ("sales", "representative", "rep", "supervisor", "leader", "marketing", "promoter",
+               "business development", "territory")
 
 
 def format_phone(raw):
@@ -187,7 +195,9 @@ def is_field_role(d):
 
 
 def default_skills(d):
-    return SALES_SKILLS if is_field_role(d) else GENERAL_SKILLS
+    if not is_field_role(d):
+        return GENERAL_SKILLS
+    return MEDICAL_SALES_SKILLS if is_medical(d) else SALES_SKILLS
 
 
 def default_duties(d):
@@ -327,6 +337,32 @@ def _initials(name):
     return (parts[0][0] + (parts[-1][0] if len(parts) > 1 else "")).upper()
 
 
+_SMALL = {"of", "in", "and", "for", "the", "at", "to", "on", "with", "a", "an", "&", "or"}
+
+
+def title_case(t):
+    """'medical sales & territory management' -> 'Medical Sales & Territory Management' (acronyms kept)."""
+    words = " ".join(str(t or "").split()).split(" ")
+    out = []
+    for i, w in enumerate(words):
+        if not w:
+            continue
+        if w.isupper() and len(w) > 1 or any(ch.isdigit() for ch in w):
+            out.append(w)
+        elif i and w.lower() in _SMALL:
+            out.append(w.lower())
+        else:
+            out.append("-".join(p[:1].upper() + p[1:] for p in w.split("-")))
+    return " ".join(out)
+
+
+def _duration(t):
+    """Same date style everywhere: '2021-present' -> '2021 - Present'."""
+    t = " ".join(str(t or "").split())
+    t = re.sub(r"\s*[-–—]\s*", " - ", t)
+    return re.sub(r"\b(present|now|current)\b", "Present", t, flags=re.I)
+
+
 def _sentence(t):
     t = " ".join(str(t or "").split()).strip(" -•*")
     if not t:
@@ -427,7 +463,7 @@ def _icon_box(c, x, y, kind):
 
 def _draw_first_page(d, photo):
     name = nice_name(d.get("full_name"))
-    title = (d.get("job_title") or "Sales Representative").upper()
+    title = title_case(d.get("job_title") or "Sales Representative").upper()
 
     def draw(c, doc):
         c.saveState()
@@ -436,7 +472,7 @@ def _draw_first_page(d, photo):
         c.rect(0, PAGE_H - HEADER_H, PAGE_W, HEADER_H, stroke=0, fill=1)
         cy = PAGE_H - 98
         if photo:
-            cx, r = 118, 72
+            cx, r = 116, 64
             c.setFillColor(white)
             c.circle(cx, cy, r + 3.5, stroke=0, fill=1)
             p = c.beginPath()
@@ -496,38 +532,42 @@ def _draw_first_page(d, photo):
     return draw
 
 
-# ---------------------------------------------------------------------- story
-def _story(d, s, max_skills=12, duty_targets=(4, 3)):
-    f = s["f"]
-    out = [
-        Paragraph(esc(d.get("job_title") or "Sales Representative"), s["headline"]),
-        Spacer(1, 2 * f),
-        Paragraph(esc(build_profile(d)), s["body"]),
-        Spacer(1, 4 * f),
-    ]
+def job_duties(d, e, target=4):
+    """The applicant's own duties; standard ones for that position only fill gaps."""
+    duties = [_sentence(x) for x in (e.get("duties") or []) if _sentence(x)][:5]
+    verbs = {x.split()[0].lower() for x in duties}
+    for extra in duties_for_job(d, e):
+        if len(duties) >= target or (d.get("_ai") and len(duties) >= 2):  # AI wrote them from real facts
+            break
+        if extra.split()[0].lower() not in verbs:  # don't repeat what they already wrote
+            duties.append(extra)
+    return [x for x in duties if x]
 
-    skills = ([x for x in d.get("skills") or [] if x][:12] or list(default_skills(d)))[:max_skills]
+
+def core_skills(d, max_skills=12):
+    skills = [title_case(x) for x in d.get("skills") or [] if x][:12] or list(default_skills(d))
+    skills = skills[:max_skills]
     for extra in default_skills(d):
         if len(skills) >= 9:
             break
         if not (_words(extra) & set().union(*[_words(k) for k in skills] or [set()])):
             skills.append(extra)
-    if skills:
-        cols = 3
-        per_col = (len(skills) + cols - 1) // cols
-        columns = [skills[i * per_col:(i + 1) * per_col] for i in range(cols)]
-        rows = []
-        for r in range(per_col):
-            rows.append([Paragraph(esc(col[r]), s["bullet"], bulletText="•") if r < len(col) else "" for col in columns])
-        out.append(KeepTogether([Rule(f), Paragraph("SKILLS", s["h"]), Spacer(1, 3 * f),
-                                 _grid_table(rows, [CONTENT_W / 3] * 3), Spacer(1, 4 * f)]))
+    return skills
+
+
+# ---------------------------------------------------------------------- story
+def _story(d, s, max_skills=12, duty_targets=(4, 3)):
+    f = s["f"]
+    out = [KeepTogether(section("Professional Summary", s)[1:] + [  # the contact row already draws a rule
+        Paragraph(esc(build_profile(d)), s["body"]), Spacer(1, 4 * f)])]
 
     exps = [e for e in d.get("experiences") or [] if e.get("company")]
     if d.get("has_experience") and exps:
         target = duty_targets[0] if len(exps) == 1 else duty_targets[1]  # standard duties are topped up to this
         for i, e in enumerate(exps):
             plain = e["company"] + (f" | {e['location']}" if e.get("location") else "")
-            dur_plain = f"( {e['duration']} )" if e.get("duration") else ""
+            dur = _duration(e.get("duration"))
+            dur_plain = f"( {dur} )" if dur else ""
             dur_w = pdfmetrics.stringWidth(dur_plain, "Body-Bold", s["dur"].fontSize) + 8 if dur_plain else 0
             head_w = CONTENT_W - dur_w
             block = section("Professional Experience", s) if i == 0 else []  # heading stays with 1st job
@@ -536,17 +576,10 @@ def _story(d, s, max_skills=12, duty_targets=(4, 3)):
                 [head_w, CONTENT_W - head_w] if dur_w else [CONTENT_W - 1, 1],
             ), Spacer(1, 1 * f)]
             if e.get("title"):
-                block += [Paragraph(esc(e["title"]), s["role"]), Spacer(1, 2 * f)]
+                block += [Paragraph(esc(title_case(e["title"])), s["role"]), Spacer(1, 2 * f)]
             else:
                 block.append(Spacer(1, 2 * f))
-            duties = [_sentence(x) for x in (e.get("duties") or []) if _sentence(x)][:5]
-            verbs = {x.split()[0].lower() for x in duties}
-            for extra in duties_for_job(d, e):
-                if len(duties) >= target or (d.get("_ai") and len(duties) >= 3):  # AI already wrote enough
-                    break
-                if extra.split()[0].lower() not in verbs:  # don't repeat what they already wrote
-                    duties.append(extra)
-            block += [Paragraph(esc(x), s["bullet"], bulletText="•") for x in duties if x]
+            block += [Paragraph(esc(x), s["bullet"], bulletText="•") for x in job_duties(d, e, target)]
             out.append(KeepTogether(block))
         highlights = []
         if is_field_role(d):
@@ -559,12 +592,25 @@ def _story(d, s, max_skills=12, duty_targets=(4, 3)):
             out.append(KeepTogether([Spacer(1, 5 * f)] + highlights))
         out.append(Spacer(1, 4 * f))
 
-    out.append(KeepTogether(section("Career Objective", s) + [
-        Paragraph(esc(build_objective(d)), s["body"]), Spacer(1, 4 * f)]))
+    achievements = [_sentence(x) for x in d.get("achievements") or [] if _sentence(x)][:5]
+    if achievements:  # only results the applicant stated
+        out.append(KeepTogether(section("Key Achievements", s) + [
+            Paragraph(esc(x), s["bullet"], bulletText="•") for x in achievements] + [Spacer(1, 4 * f)]))
+
+    skills = core_skills(d, max_skills)
+    if skills:
+        cols = 3
+        per_col = (len(skills) + cols - 1) // cols
+        columns = [skills[i * per_col:(i + 1) * per_col] for i in range(cols)]
+        rows = []
+        for r in range(per_col):
+            rows.append([Paragraph(esc(col[r]), s["bullet"], bulletText="•") if r < len(col) else "" for col in columns])
+        out.append(KeepTogether(section("Core Skills", s) + [_grid_table(rows, [CONTENT_W / 3] * 3), Spacer(1, 4 * f)]))
 
     edu_plain = " | ".join(str(x).strip() for x in [d.get("university"), d.get("degree"), edu_status_text(d)] if x)
-    out.append(KeepTogether(section("Education", s) + [
-        _one_line(esc(edu_plain), edu_plain, s["edu"], CONTENT_W - 4, 10), Spacer(1, 4 * f)]))
+    if edu_plain:
+        out.append(KeepTogether(section("Education", s) + [
+            _one_line(esc(edu_plain), edu_plain, s["edu"], CONTENT_W - 4, 10), Spacer(1, 4 * f)]))
 
     courses = [c for c in d.get("courses") or [] if c][:8]
     if courses:

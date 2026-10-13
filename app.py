@@ -32,6 +32,8 @@ from flask import Flask, abort, request
 
 from cv_pdf import build_cv, edu_status_text, format_phone, is_field_role, is_student, nice_name
 import ai
+import extras
+import photos
 import translate
 from form import TEMPLATE, convert_form, parse_form
 from translate import (company_en, duration_en, has_ar, language_en, name_en, norm, place_en, products_en,
@@ -110,6 +112,7 @@ MULTI = {  # prefix -> (step, options, selection key, extras key, label when not
 }
 
 COMPANY = "مسار للتوظيف الطبي"
+PAYMENT_WAIT = env("PAYMENT_WAIT", "خلال وقت قصير")  # e.g. "خلال ساعة"; shown after the payment photo
 COMPANY_EN = "Masar Medical Careers"
 PARTNER = env("PARTNER_NAME", "قناة مصطفى أمير")  # the channel we belong to (can be changed on Render)
 BOT_NAME = "مسار للتوظيف الطبي | Masar"
@@ -133,11 +136,27 @@ WELCOME = (
     "🔒 <i>معلوماتك تُستخدم فقط لإعداد سيرتك الذاتية وترشيحك لفرص عمل مناسبة، وما تنشر بشكل عام.</i>"
 )
 COURSES_TEXT = (
-    f"🎓 <b>كورسات {COMPANY}</b>\n\n"
-    "كورسات عملية تجهزك لسوق العمل:\n\n"
-    "🎤 <b>المقابلات الوظيفية</b>: شلون تقدّم نفسك وتجاوب على أسئلة الشركات بثقة\n"
-    "💼 <b>المندبة الطبية والمبيعات</b>: زيارات الأطباء والصيدليات، عرض المنتج، والإقناع\n\n"
-    "سجّل اهتمامك، والإدارة تتواصل وياك بالمواعيد والتفاصيل 👇"
+    f"🎓 <b>كورسات {COMPANY}</b>\n"
+    "كورسات عملية تجهزك للمقابلة ولأول يوم شغل 💪\n\n"
+    "🎤 <b>كورس المقابلات الوظيفية</b>\n"
+    "• شلون تعرّف نفسك بأول دقيقة وتترك انطباع قوي\n"
+    "• أشهر أسئلة شركات الأدوية والتجميل، وشلون تجاوب عليها\n"
+    "• المظهر ولغة الجسد وطريقة الكلام\n"
+    "• شلون تتفاوض على الراتب والعرض الوظيفي\n"
+    "• مقابلة تجريبية ويا ملاحظات على أدائك\n\n"
+    "💼 <b>كورس المندبة الطبية والمبيعات</b>\n"
+    "• شنو شغل المندوب العلمي يومياً، وشنو تنتظر منه الشركة\n"
+    "• التخطيط للزيارات وتغطية المنطقة\n"
+    "• زيارة الطبيب والصيدلي: البداية، عرض المنتج، وإغلاق الزيارة\n"
+    "• التعامل ويا الاعتراضات والمنافسين\n"
+    "• التارگت والتقارير ومتابعة الأداء\n\n"
+    "✅ <b>شنو تحصل من الكورس:</b>\n"
+    "• تدريب عملي بأمثلة من السوق العراقي، مو بس كلام نظري\n"
+    "• تمارين وتطبيق على مواقف حقيقية\n"
+    "• مراجعة للسي في مالتك\n"
+    "• ثقة أكبر بالمقابلة وبالشغل الميداني\n\n"
+    "📌 المدة والمواعيد والسعر تبلغك بيها الإدارة بعد التسجيل.\n\n"
+    "سجّل اهتمامك 👇"
 )
 COURSE_CHOICES = [("int", "🎤 المقابلات الوظيفية"), ("rep", "💼 المندبة الطبية والمبيعات"), ("all", "📚 الاثنين")]
 
@@ -157,9 +176,9 @@ QUESTIONS = {  # step -> (question, optional?)
     "has_exp": ("عندك خبرة شغل سابقة؟ (حتى لو شهر واحد)", False),
     "job_company": ("💼 اسم الشركة أو المكان اللي اشتغلت بيه\nإذا تعرف اسمها بالإنگليزي أحسن، وإذا لا اكتبه بالعربي\n"
                     "مثال: <b>Pioneer</b> أو <b>صيدلية النور</b>", False),
-    "job_role": ("شنو كان عنوانك الوظيفي بهذا الشغل؟\nاختار أو اكتبه", False),
+    "job_role": ("شنو كان مسمّاك الوظيفي بهذا الشغل؟\nاختار أو اكتبه", False),
     "job_place": ("وين كان الشغل؟ (المدينة أو المنطقة)\nمثال: <b>بغداد - المنصور</b>", True),
-    "job_duration": ("شگد اشتغلت بيه؟ ⏳\nاختار، أو اكتب مثل <b>8 أشهر</b> أو <b>2021 - حاليا</b>", True),
+    "job_duration": ("شگد اشتغلت بيه؟ ⏳\nاختار، أو اكتب مثل <b>8 أشهر</b> أو <b>2021 - حالياً</b>", True),
     "duties": ("شنو كانت مهامك بهذا الشغل؟ 📝\nاكتب كل مهمة بسطر، بالعربي عادي\n\n"
                "مثال:\n<b>زيارة الأطباء والصيدليات بمنطقة المنصور\nتحقيق التارگت الشهري</b>\n\n"
                "إذا تريد أكتبلك مهام قوية جاهزة اضغط تخطي", True),
@@ -176,7 +195,9 @@ QUESTIONS = {  # step -> (question, optional?)
     "other_langs": ("تعرف لغات ثانية غير العربي والإنگليزي؟\nاختار، أو اكتبها برسالة، وبعدها اضغط <b>✔️ تم</b>", True),
     "courses": ("عندك دورات أو شهادات؟ 📜\nاكتب كل وحدة بسطر\nمثال: <b>دورة مهارات البيع - 2023</b>\n\n"
                 "إذا ما عندك اضغط تخطي", True),
-    "photo": ("دز صورة شخصية رسمية واضحة 📸، أو اضغط تخطي", True),
+    "photo": ("📸 دز <b>صورتك الشخصية</b> (يفضّل رسمية وبخلفية هادئة).\n"
+              "أعدّلها وأضبطها إلك، وتگدر تدز <b>أكثر من صورة</b> وتختار الأحلى، أو تخلي الأصلية.\n"
+              "وإذا ما تريد صورة اضغط تخطي", True),
     # job ad
     "ad_company": ("🏢 <b>للشركات: طلب مندوبين أو موظفين</b>\n\n"
                    "تحتاجون مندوبين أو موظفين أو خدمات؟ اكتبولنا التفاصيل، ونرشحلكم أنسب المتقدمين من عدنا، "
@@ -284,8 +305,10 @@ def tg(method, _timeout=30, **params):
         return {"ok": False}
 
 
-def send(chat_id, text, keyboard=None, remove_keyboard=False, inline=None, reply_to=None):
+def send(chat_id, text, keyboard=None, remove_keyboard=False, inline=None, reply_to=None, silent=False):
     params = {"chat_id": chat_id, "text": text, "parse_mode": "HTML", "disable_web_page_preview": True}
+    if silent:
+        params["disable_notification"] = True
     if inline:
         params["reply_markup"] = {"inline_keyboard": inline}
     elif keyboard:
@@ -603,6 +626,9 @@ def apply_cv_data(d, r):
         d["survey"] = r["survey"]
     if txt("licence") in ("car", "licence", "none"):
         d["licence"] = txt("licence")
+    achievements = [x[:200] for x in lst("achievements_en") if not has_ar(x)][:5]
+    if achievements:
+        d["achievements"], ar["achievements"] = achievements, lst("achievements_ar")
     skills = [tidy(s)[:40] for s in lst("skills_en") if not has_ar(s)][:12]
     if skills:
         d["skills"], ar["skills"] = skills, lst("skills_ar")
@@ -659,7 +685,59 @@ def handle_form(chat_id, sess, msg):
 
 
 
+# ================================================================ photos
+def receive_photo(chat_id, sess, file_id):
+    """Edits the photo (face-centred crop, light correction) and shows it with its choices.
+    Several photos can be sent: each one gets its own preview and buttons."""
+    raw = download_file(file_id, max_bytes=15 * 1024 * 1024)
+    try:
+        edited, face = photos.edit_photo(raw) if raw else (None, False)
+    except Exception:
+        edited, face = None, False
+    if not edited:
+        send(chat_id, "ما گدرت أفتح الصورة 😅 دز وحدة ثانية (صورة عادية، مو ملف)")
+        return False
+    options = sess.setdefault("photo_options", [])
+    if len(options) >= 6:
+        options.pop(0)
+    options.append({"orig": raw, "edited": edited})
+    n = len(options)
+    if sess.get("step") == "talk":  # the conversation is not stopped: the edited one is used unless they change it
+        sess["photo"], sess["data"]["_photo_asked"] = edited, True
+    note = "قصّيتها على الوجه وضبطت الإضاءة والوضوح" if face else "ضبطت القص والإضاءة والوضوح"
+    try:
+        r = http.post(f"{API}/sendPhoto", timeout=60, data={
+            "chat_id": str(chat_id), "parse_mode": "HTML",
+            "caption": f"📸 <b>الصورة {n} بعد التعديل</b>: {note} ✨\n"
+                       "إذا عندك صورة ثانية دزها هم، واختار اللي تعجبك 👇",
+            "reply_markup": json.dumps({"inline_keyboard": [
+                [{"text": f"✅ اعتمد الصورة {n}", "callback_data": f"p:e:{n - 1}"}],
+                [{"text": "🖼️ الأصلية بدون تعديل", "callback_data": f"p:o:{n - 1}"}]]})},
+            files={"photo": ("photo.jpg", edited, "image/jpeg")}).json()
+        return bool(r.get("ok"))
+    except Exception:
+        return False
+
+
+def choose_photo(chat_id, sess, kind, index):
+    options = sess.get("photo_options") or []
+    if not 0 <= index < len(options):
+        send(chat_id, "⌛ هذي الصورة قديمة، دزها مرة ثانية 🙏")
+        return
+    sess["photo"] = options[index]["edited" if kind == "e" else "orig"]
+    sess["data"]["_photo_asked"] = True
+    send(chat_id, "✅ اعتمدت " + ("الصورة المعدّلة" if kind == "e" else "الصورة الأصلية") + " للسي في")
+    if sess["step"] == "photo":
+        go_next(chat_id, sess)
+    elif sess["step"] == "confirm":
+        show_summary(chat_id, sess)
+
+
 # ======================================================= AI conversation
+TALK_OPTIONAL = {  # asked only together with something else that is missing (never a question on its own)
+    "achievements": "🏆 إنجازاتك بالشغل إذا عندك، بالأرقام الحقيقية: مثلاً حققت التارگت بنسبة كذا، فتحت مناطق أو صيدليات جديدة، دربت مندوبين، أو ترقيت لمشرف",
+    "email": "✉️ إيميلك (الشركات تفضّل أكثر من وسيلة تواصل)",
+}
 TALK_ASK = {  # what is missing -> how the AI conversation asks for it (all in one message)
     "name": "👤 اسمك الثلاثي",
     "phone": "📞 رقم هاتفك",
@@ -712,6 +790,82 @@ def conversation_text(sess):
                 "edit": "تصحيح من الشخص على الملخص"}.get(turn.get("kind"), "جواب الشخص")
         parts.append(f"{kind}: {turn['a']}")
     return "\n\n".join(parts)
+
+
+GENERIC_WORDS = {"جامعه", "الجامعه", "كليه", "الكليه", "معهد", "المعهد", "شركه", "الشركه", "مؤسسه", "مكتب",
+                 "صيدليه", "مجموعه", "university", "college", "institute", "company", "co", "of", "the", "al",
+                 "group", "pharmacy", "for", "and", "في", "من", "على", "او", "و", "ال"}
+JOB_PHRASES = ("مندوب طبي", "مندوبه طبيه", "مندوب علمي", "مندوب مبيعات طبي", "مندوب مبيعات", "شغل طبي",
+               "قطاع طبي", "القطاع الطبي", "مجال طبي", "المجال الطبي", "شركه ادويه", "شركات الادويه", "مستلزمات طبيه",
+               "اجهزه طبيه", "مواد طبيه", "medical representative", "medical rep", "medical sales")
+STUDY_WORDS = re.compile(r"كليه|جامعه|معهد|تخصص|خريج|طالب|بكالوريوس|بكلوريوس|دبلوم|دراس|شهاده|مرحله|college|university|degree|bachelor|diploma|faculty|graduat", re.I)
+
+
+def _hay(text):
+    return norm(text or "").lower()
+
+
+def _said(hay, ar=None, en=None, exclude=()):
+    """True if the applicant's own words contain this fact (whole phrase, or every distinctive word)."""
+    for v in (ar, en):
+        v = _hay(v)
+        if not v:
+            continue
+        if v in hay:
+            return True
+        words = [w for w in re.findall(r"[\w']+", v) if w not in GENERIC_WORDS and w not in exclude and len(w) >= 2]
+        if words and all(w in hay for w in words):
+            return True
+    return False
+
+
+def ground_ai(data, said_text):
+    """HR rejects a CV with a wrong degree, year or employer: anything important the AI returned that the
+    applicant never said is removed (then the bot simply asks for it). Returns the dropped fields."""
+    hay = _hay(said_text)
+    digits = set(re.findall(r"\d+", hay))
+    city_words = set(re.findall(r"[\w']+", _hay(data.get("city_ar")) + " " + _hay(data.get("city_en"))))
+    dropped = []
+    sp_ar, sp_en = data.get("specialty_ar"), data.get("specialty_en")
+    if sp_ar or sp_en:
+        # what they studied must be said apart from their job ("مندوب طبي" is not a medical degree)
+        study_hay = hay
+        for phrase in [data.get("job_title_ar")] + [j.get("title_ar") for j in data.get("experiences") or []
+                                                    if isinstance(j, dict)] + list(JOB_PHRASES):
+            phrase = _hay(phrase)
+            if len(phrase) >= 3:
+                study_hay = study_hay.replace(phrase, " ")
+        if not _said(study_hay, sp_ar, sp_en):
+            data["specialty_ar"] = data["specialty_en"] = None
+            dropped.append("specialty")
+    if (data.get("university_ar") or data.get("university_en")) and not _said(
+            hay, data.get("university_ar"), data.get("university_en"), exclude=city_words):
+        data["university_ar"] = data["university_en"] = None
+        dropped.append("university")
+    year = re.fullmatch(r"(19|20)\d{2}", str(data.get("edu_status") or "").strip())
+    if year and year.group(0) not in digits:
+        data["edu_status"] = None
+        dropped.append("edu_status")
+    jobs = []
+    for j in data.get("experiences") or []:
+        if not isinstance(j, dict):
+            continue
+        if not _said(hay, j.get("company_ar"), j.get("company_en"), exclude=city_words):
+            dropped.append("company")
+            continue
+        j["duties_en"] = [x for x in j.get("duties_en") or [] if set(re.findall(r"\d+", str(x))) <= digits]
+        jobs.append(j)
+    data["experiences"] = jobs
+    data["achievements_en"] = [x for x in data.get("achievements_en") or []
+                               if isinstance(x, str) and set(re.findall(r"\d+", x)) <= digits]
+    if dropped:
+        log.info("dropped facts the applicant did not say: %s", dropped)
+    return dropped
+
+
+def said_text(sess):
+    """Only the applicant's own words (not the bot's questions, which can repeat what the AI understood)."""
+    return "\n".join(t["a"] for t in sess.get("talk") or [])
 
 
 def merge_ai(d, data):
@@ -802,11 +956,10 @@ def handle_talk(chat_id, sess, msg, kind="text"):
     text = "\n".join(clean(x) for x in raw.splitlines() if clean(x))  # keep the lines (forms, lists)
     doc = msg.get("document") or {}
     if msg.get("photo") or (doc.get("mime_type") or "").startswith("image/"):
-        sess["photo"] = download_file(msg["photo"][-1]["file_id"] if msg.get("photo") else doc["file_id"])
-        d["_photo_asked"] = bool(sess["photo"])
-        send(chat_id, "📸 حفظت صورتك الشخصية للسي في ✅" + ("" if text or sess.get("talk") else
-                      "\nهسه احچيلي عن نفسك (كتابة أو بصمة 🎤) 👆"))
+        receive_photo(chat_id, sess, msg["photo"][-1]["file_id"] if msg.get("photo") else doc["file_id"])
         if not text:
+            if not sess.get("talk") and not msg.get("media_group_id"):
+                send(chat_id, "هسه احچيلي عن نفسك (كتابة أو بصمة 🎤) 👆")
             return
     elif doc:
         data = download_file(doc["file_id"], max_bytes=10 * 1024 * 1024)
@@ -839,6 +992,7 @@ def handle_talk(chat_id, sess, msg, kind="text"):
         go_next(chat_id, sess)
         return
     log.info("conversation read by AI (%s)", how)
+    ground_ai(data, said_text(sess))
     merge_ai(d, data)
     first_round = sess.get("rounds", 0) == 0
     todo = talk_missing(d, first_round)
@@ -848,9 +1002,15 @@ def handle_talk(chat_id, sess, msg, kind="text"):
         name = first_name(d)
         got = understood_line(d)
         question = ((f"✅ تمام{' ' + esc(name) if name else ''}، فهمت معلوماتك" + (f": {got}" if got else "") + ".\n\n")
-                    + ("باقي عندي بس هذني، جاوبهن <b>برسالة وحدة</b> (كتابة أو بصمة 🎤):\n\n" if len(todo) > 1
+                    + ("باقي عندي بس هاي الشغلات، جاوب عليها <b>برسالة وحدة</b> (كتابة أو بصمة 🎤):\n\n" if len(todo) > 1
                        else "باقي شغلة وحدة 👇\n\n")
                     + "\n".join(TALK_ASK[k] for k in todo))
+        optional = [k for k in ("achievements", "email") if first_round and k not in (d.get("_asked") or [])
+                    and ((k == "achievements" and d.get("experiences") and not d.get("achievements"))
+                         or (k == "email" and not d.get("email")))]
+        if optional:
+            d["_asked"] = sorted(set(d["_asked"]) | set(optional))
+            question += "\n\n<b>وحتى يصير السي في أقوى (اختياري):</b>\n" + "\n".join(TALK_OPTIONAL[k] for k in optional)
         sess["last_q"] = question
         send(chat_id, question)
         return
@@ -879,6 +1039,7 @@ def handle_ai_edit(chat_id, sess, text, kind="edit"):
         sess["talk"].pop()
         send(chat_id, "ما گدرت أعدّل هسه 😅 استخدم زر <b>✏️ تعديل معلومة</b> تحت الملخص.")
         return
+    ground_ai(data, said_text(sess))
     merge_ai(sess["data"], data)
     send(chat_id, "✅ عدّلتها")
     show_summary(chat_id, sess)
@@ -1045,6 +1206,8 @@ def summary_text(sess):
                 lines.append(line("🗺️ <b>المناطق:</b>", ar.get("territory"), d["territory"]))
     else:
         lines.append("💼 <b>الخبرة:</b> بدون خبرة سابقة")
+    if d.get("achievements"):
+        lines.append(line("🏆 <b>الإنجازات:</b>", ar.get("achievements"), d["achievements"]))
     if is_field_role(d):
         if d.get("survey") is not None or not d.get("_talk"):
             lines.append("📊 <b>مسح ميداني:</b> " + ("نعم" if d.get("survey") else "لا"))
@@ -1206,10 +1369,7 @@ def handle_cv_answer(chat_id, sess, msg):
 
     if step == "confirm":
         if msg.get("photo") or ((msg.get("document") or {}).get("mime_type") or "").startswith("image/"):
-            fid = msg["photo"][-1]["file_id"] if msg.get("photo") else msg["document"]["file_id"]
-            sess["photo"] = download_file(fid) or sess.get("photo")
-            send(chat_id, "📸 ضفت صورتك للسي في ✅")
-            show_summary(chat_id, sess)
+            receive_photo(chat_id, sess, msg["photo"][-1]["file_id"] if msg.get("photo") else msg["document"]["file_id"])
             return
         if text and d.get("_talk") and ai.enabled():
             handle_ai_edit(chat_id, sess, text)
@@ -1223,16 +1383,17 @@ def handle_cv_answer(chat_id, sess, msg):
         handle_form(chat_id, sess, msg)
         return
     if step == "photo":
-        d["_photo_asked"] = True
-        if not skipped:
-            if msg.get("photo"):
-                sess["photo"] = download_file(msg["photo"][-1]["file_id"])
-            elif (msg.get("document") or {}).get("mime_type", "").startswith("image/"):
-                sess["photo"] = download_file(msg["document"]["file_id"])
-            else:
-                send(chat_id, "دز <b>صورة</b> أو اضغط تخطي", keyboard=[[SKIP]])
-                return
-        go_next(chat_id, sess)
+        if skipped:
+            sess["photo"] = None
+            d["_photo_asked"] = True
+            go_next(chat_id, sess)
+        elif msg.get("photo") or ((msg.get("document") or {}).get("mime_type") or "").startswith("image/"):
+            receive_photo(chat_id, sess, msg["photo"][-1]["file_id"] if msg.get("photo") else msg["document"]["file_id"])
+        elif sess.get("photo_options") and norm(text) in {norm(w) for w in CONFIRM_WORDS | {"كمل", "اكمل"}}:
+            choose_photo(chat_id, sess, "e", len(sess["photo_options"]) - 1)
+        else:
+            send(chat_id, ("اختار من الأزرار تحت الصورة 👆، أو دز صورة ثانية، أو اضغط تخطي"
+                           if sess.get("photo_options") else "دز <b>صورة</b> 📸 أو اضغط تخطي"), keyboard=[[SKIP]])
         return
     if not text:
         send(chat_id, "اكتب الجواب كنص رجاءً 🙏")
@@ -1462,13 +1623,117 @@ def payment_message():
         "شكراً لإكمال معلوماتك 🤍\n\n"
         f"خدمة <b>{COMPANY}</b> تشمل إعداد <b>سيرة ذاتية احترافية بصيغة PDF</b>، مع ترشيحك للشركات "
         "اللي تطلب مندوبين وموظفين حسب مؤهلاتك ومتطلباتها.\n\n"
-        f"💰 تكلفة الخدمة: <b>{PRICE_IQD:,} دينار عراقي</b>\n\n"
+        f"💰 كلفة الخدمة: <b>{PRICE_IQD:,} دينار عراقي</b>\n\n"
+        f"{GIFT_TEASER}\n\n"
         f"💳 حوّل على بطاقة <b>Qi Card</b>:\n{name}رقم البطاقة: <code>{esc(QI_CARD_NUMBER)}</code>\n\n"
         "📸 بعدها دز <b>صورة تأكيد الدفع</b> هنا.\n"
-        "بعد التحقق من الدفع، نرسلك سيرتك الذاتية.\n\n"
+        "بعد التحقق من الدفع، نرسلك السي في والهدايا هنا مباشرةً.\n\n"
         "<i>ملاحظة: ترشيح السيرة الذاتية يعتمد على توفر الفرص ومدى توافق مؤهلاتك مع متطلبات الوظيفة، "
         "ولا يضمن الحصول على مقابلة أو وظيفة.</i>"
     )
+
+
+GIFT_TEASER = (
+    "🎁 <b>ويا السي في تستلم هدايا مجانية:</b>\n"
+    "📄 <b>نسخة ATS</b> ثانية للتقديم على المواقع والشركات اللي تفرز السيفيات إلكترونياً\n"
+    "✉️ <b>رسالة تغطية Cover Letter</b> بالإنگليزي مكتوبة إلك\n"
+    "🎤 <b>تحضير للمقابلة</b>: أهم الأسئلة لوظيفتك ويا أجوبة مقترحة من خبرتك"
+)
+FALLBACK_INTERVIEW = [
+    ("عرّفنا بنفسك", "ابدي باسمك ودراستك، بعدها خبرتك أو أقوى مهارة عندك، واختم بليش تريد هذي الوظيفة. خليها دقيقة وحدة."),
+    ("ليش تريد تشتغل بهذي الوظيفة؟", "اربط جوابك بشي حقيقي عندك: حبك للتعامل ويا الناس، اهتمامك بالمجال الطبي، أو خبرتك السابقة."),
+    ("شنو تعرف عن شركتنا ومنتجاتنا؟", "قبل المقابلة ابحث عن الشركة ومنتجاتها، واذكر شي واحد عجبك بيها."),
+    ("شلون تتعامل ويا طبيب أو صيدلي رافض المنتج؟", "اسمع اعتراضه للآخر، اسأله عن السبب، وجاوب بفائدة المنتج اللي تهمه، وخلّي الباب مفتوح لزيارة ثانية."),
+    ("شلون تحقق التارگت الشهري؟", "خطة زيارات أسبوعية، تركيز على الزبائن الأكثر تأثير، ومتابعة يومية للأرقام."),
+    ("احچيلي عن موقف صعب واجهته وشلون حليته", "اختار موقف حقيقي: شنو صار، شنو سويت، وشنو كانت النتيجة."),
+    ("شنو نقاط قوتك وضعفك؟", "اذكر قوة مرتبطة بالشغل، وضعف حقيقي بسيط ويا شلون دا تطوّر نفسك بيه."),
+    ("شگد تتوقع راتبك؟", "اسأل عن مدى الراتب للوظيفة إذا تگدر، وإذا لا اذكر رقم معقول وگول إنك مرن حسب المميزات."),
+]
+FALLBACK_TIPS = ["البس رسمي ونظيف", "تعال قبل الموعد بـ10 دقايق", "جيب نسختين مطبوعة من السي في",
+                 "بعد المقابلة دز رسالة شكر قصيرة للشركة"]
+gifts_by_user = {}      # chat_id -> admin message ids of the gifts (backup when a button has none)
+pending_payments = {}   # chat_id -> {"t": time the payment photo came, "msg": admin message id, "name": ...}
+
+
+def gift_facts(d):
+    """The true CV facts the AI writes the cover letter and interview answers from."""
+    keep = ("full_name", "job_title", "city", "degree", "university", "edu_status", "profile_en", "skills",
+            "achievements", "courses", "languages", "customers", "products", "territory", "licence")
+    out = {k: d.get(k) for k in keep if d.get(k)}
+    out["experiences"] = [{k: e.get(k) for k in ("company", "title", "location", "duration", "duties") if e.get(k)}
+                          for e in d.get("experiences") or [] if e.get("company")]
+    return latinize(out)
+
+
+def interview_text(d, data):
+    rows = [(x.get("q"), x.get("a")) for x in (data or {}).get("interview") or [] if isinstance(x, dict)]
+    rows = [(q, a) for q, a in rows if q and a][:10] or FALLBACK_INTERVIEW
+    tips = [t for t in (data or {}).get("tips_ar") or [] if isinstance(t, str) and t.strip()][:5] or FALLBACK_TIPS
+    job = (d.get("_ar") or {}).get("job_title") or d.get("job_title") or ""
+    text = f"🎁 <b>تحضير المقابلة</b>{' لوظيفة ' + esc(job) if job else ''} 🎤\n\n"
+    for i, (q, a) in enumerate(rows, 1):
+        item = f"<b>{i}. {esc(q)}</b>\n💡 {esc(a)}\n\n"
+        if len(text) + len(item) > 3500:
+            break
+        text += item
+    return text + "<b>نصايح سريعة:</b>\n" + "\n".join(f"• {esc(t)}" for t in tips)
+
+
+def make_gifts(chat_id, d, reply_to):
+    """ATS CV + cover letter (as one album) and the interview preparation, kept silently in the admin chat
+    under the CV, so they reach the buyer on approval even if the server restarts in between."""
+    try:
+        data, how = ai.write_extras(gift_facts(d)) if ai.enabled() else (None, "off")
+        letter = (data or {}).get("cover_letter_en") or ""
+        letter = "" if has_ar(letter) else letter
+        clean_d = latinize(d)
+        base = re.sub(r"[^A-Za-z0-9]+", "_", d.get("full_name", "cv")).strip("_")
+        ats, cover = extras.build_ats_cv(clean_d), extras.build_cover_letter(clean_d, letter)
+        media = [{"type": "document", "media": "attach://ats",
+                  "caption": "🎁 هدية: نسخة ATS من السي في، للتقديم على المواقع والشركات اللي تفرز إلكترونياً"},
+                 {"type": "document", "media": "attach://cover",
+                  "caption": "🎁 هدية: رسالة تغطية Cover Letter، ترفقها ويا السي في"}]
+        r = http.post(f"{API}/sendMediaGroup", timeout=60, data={
+            "chat_id": str(ADMIN_CHAT_ID), "media": json.dumps(media), "disable_notification": "true",
+            "reply_parameters": json.dumps({"message_id": reply_to, "allow_sending_without_reply": True})},
+            files={"ats": (f"ATS_CV_{base}.pdf", ats, "application/pdf"),
+                   "cover": (f"Cover_Letter_{base}.pdf", cover, "application/pdf")}).json()
+        ids = [m["message_id"] for m in r.get("result") or []]
+        qa = send(ADMIN_CHAT_ID, interview_text(d, data), reply_to=reply_to, silent=True)
+        if qa.get("ok"):
+            ids.append(qa["result"]["message_id"])
+        log.info("gifts ready (%s): %s", how, ids)
+        return ids
+    except Exception:
+        log.exception("gifts failed")
+        return []
+
+
+def send_preview(chat_id, pdf):
+    """The teaser before payment: their own CV, top sharp, the rest blurred."""
+    try:
+        img = extras.preview_image(pdf)
+    except Exception:
+        img = None
+    if not img:
+        return False
+    try:
+        r = http.post(f"{API}/sendPhoto", timeout=60, data={
+            "chat_id": str(chat_id), "parse_mode": "HTML",
+            "caption": "👀 <b>هذي معاينة للسي في مالتك</b>\nالنسخة الكاملة بجودة عالية توصلك هنا بعد الدفع والتأكد ✅"},
+            files={"photo": ("preview.jpg", img, "image/jpeg")}).json()
+        return bool(r.get("ok"))
+    except Exception:
+        return False
+
+
+def remind_admin(chat_id, minutes):
+    """While a buyer waits after paying, the admin gets a reminder (10 and 30 minutes)."""
+    p = pending_payments.get(chat_id)
+    if not p or not ADMIN_CHAT_ID:
+        return
+    send(ADMIN_CHAT_ID, f"⏰ <b>تذكير:</b> {esc(p.get('name') or 'متقدم')} دافع وينتظر السي في من {minutes} دقيقة.\n"
+                        "تأكد من التحويل بتطبيق Qi Card واضغط ✅ تحت السي في مالته.", reply_to=p.get("msg"))
 
 
 def finish_cv(chat_id, sess):
@@ -1480,7 +1745,7 @@ def finish_cv(chat_id, sess):
         pdf = build_cv(latinize(d), sess.get("photo"))
     except Exception:
         log.exception("pdf build failed")
-        send(chat_id, "صار خطأ بتجهيز الملف 😔 جرب مرة ثانية من /start")
+        send(chat_id, "صار خطأ بتجهيز الملف 😔 جرّب مرة ثانية من /start")
         sessions.pop(chat_id, None)
         return
     filename = "CV_" + re.sub(r"[^A-Za-z0-9]+", "_", d.get("full_name", "cv")).strip("_") + ".pdf"
@@ -1503,16 +1768,27 @@ def finish_cv(chat_id, sess):
     if not res.get("ok"):
         log.error("could not deliver CV to admin")
         sessions.pop(chat_id, None)
-        send(chat_id, "صار خطأ بالإرسال 😔 جرب مرة ثانية بعد شوية من /start")
+        send(chat_id, "صار خطأ بالإرسال 😔 جرّب مرة ثانية بعد شوية من /start")
         return
+    admin_msg = res["result"]["message_id"]
     if PAID:
         sess["mode"], sess["step"] = "cv", "payment"
-        sess["admin_msg"] = res["result"]["message_id"]
+        sess["admin_msg"] = admin_msg
+        send_preview(chat_id, pdf)
         send(chat_id, payment_message())
     else:
         sessions.pop(chat_id, None)
         send(chat_id, "✅ وصلتنا معلوماتك!\n\nالسي في مالتك هسه <b>قيد المراجعة</b>، "
-                      "وراح يوصلك هنا أول ما يجهز 🤍")
+                      "وراح يوصلك هنا أول ما يجهز 🤍\n\n" + GIFT_TEASER)
+    ids = make_gifts(chat_id, d, admin_msg)  # the buyer already has their message; this runs meanwhile
+    if ids:
+        gifts_by_user[chat_id] = ids
+        if len(gifts_by_user) > 3000:
+            gifts_by_user.pop(next(iter(gifts_by_user)))
+        tag_ids = ":".join(str(i) for i in ids)
+        rows = [[{"text": b["text"], "callback_data": b["callback_data"] + (f":{tag_ids}" if b["callback_data"].startswith("ok:") else "")}
+                 for b in row] for row in buttons]
+        tg("editMessageReplyMarkup", chat_id=ADMIN_CHAT_ID, message_id=admin_msg, reply_markup={"inline_keyboard": rows})
 
 
 def forward_to_admin(chat_id, msg, header, reply_to=None):
@@ -1538,7 +1814,17 @@ def handle_payment_proof(chat_id, sess, msg):
                            reply_to=sess.get("admin_msg") if sess else None)
     sessions.pop(chat_id, None)
     if res.get("ok"):
-        send(chat_id, "✅ استلمنا صورة الدفع.\nراح نتأكد من وصول المبلغ ونرسلك سيرتك الذاتية هنا 🤍")
+        pending_payments[chat_id] = {"t": time.time(), "msg": (res.get("result") or {}).get("message_id"),
+                                     "name": d.get("full_name")}
+        for minutes in (10, 30):
+            timer = threading.Timer(minutes * 60, remind_admin, args=(chat_id, minutes))
+            timer.daemon = True
+            timer.start()
+        send(chat_id, "✅ <b>استلمنا صورة الدفع، شكراً إلك 🤍</b>\n\n"
+                      "⏳ هسه دا نتأكد من وصول المبلغ بتطبيق Qi Card (التأكد يدوي)، "
+                      f"وأول ما يتأكد يوصلك هنا {PAYMENT_WAIT}:\n"
+                      "📄 السي في مالتك\n🎁 ويا الهدايا: نسخة ATS، رسالة تغطية، وتحضير المقابلة\n\n"
+                      "ما تحتاج تسوي شي ثاني، بس خلي إشعارات البوت مفتوحة 🔔")
     else:
         send(chat_id, "صار خطأ بالإرسال 😔 دز الصورة مرة ثانية")
 
@@ -1546,7 +1832,7 @@ def handle_payment_proof(chat_id, sess, msg):
 # ================================================================= job ad
 def ad_text(d):
     city = tag(d.get("ad_city"))
-    footer = f"\n\n📝 تريد سيرة ذاتية احترافية؟ @{BOT_USERNAME}" if BOT_USERNAME else ""
+    footer = f"\n\n📝 تريد سيرة ذاتية احترافية من {COMPANY}؟ @{BOT_USERNAME}" if BOT_USERNAME else ""
     return (f"📢 <b>فرصة عمل: {esc(d['ad_title'])}</b>\n\n"
             f"🏢 <b>الشركة:</b> {esc(d['ad_company'])}\n"
             f"📍 <b>مكان العمل:</b> {esc(d['ad_city'])}\n\n"
@@ -1653,7 +1939,7 @@ def handle_callback(cq):
         return
 
     # ---- applicant buttons (need a live session)
-    if data[:2] in ("u:", "e:", "a:") or data[:2] in tuple(f"{p}:" for p in MULTI):
+    if data[:2] in ("u:", "e:", "a:", "p:") or data[:2] in tuple(f"{p}:" for p in MULTI):
         if not sess:
             drop_buttons()
             send(chat_id, "⌛ هذا الزر من رسالة قديمة.\nاكتب /start إذا تريد تبدي من جديد.")
@@ -1670,6 +1956,9 @@ def handle_callback(cq):
         elif data == "u:steps" and sess["step"] in ("form", "talk"):
             drop_buttons()
             start_steps(chat_id, sess)
+        elif data.startswith("p:") and data.count(":") == 2 and data.split(":")[2].isdigit():
+            drop_buttons()
+            choose_photo(chat_id, sess, data.split(":")[1], int(data.split(":")[2]))
         elif data == "u:form" and sess["step"] == "talk":
             drop_buttons()
             send_form(chat_id)
@@ -1717,17 +2006,28 @@ def handle_callback(cq):
         return
 
     # ---- admin buttons
-    action, _, target = data.partition(":")
+    parts = data.split(":")
+    action, target = parts[0], parts[1] if len(parts) > 1 else ""
     if not (ADMIN_CHAT_ID and str(chat_id) == str(ADMIN_CHAT_ID) and target.lstrip("-").isdigit()):
         return
     target = int(target)
     if action in ("ok", "no"):
         caption = msg.get("caption") or ""
         drop_buttons()  # first, so a double tap can't send twice
+        pending_payments.pop(target, None)
         if action == "ok":
             res = tg("sendDocument", chat_id=target, document=(msg.get("document") or {}).get("file_id"),
-                     caption="🎉 السي في مالتك جاهز! بالتوفيق بالتقديم 🤍")
+                     caption=f"🎉 السي في مالتك جاهز! بالتوفيق بالتقديم 🤍\n— {COMPANY}")
             status = "✅ انرسل للشخص" if res.get("ok") else "⚠️ ما گدرت أدزه (يمكن الشخص حاظر البوت)"
+            gift_ids = sorted(int(x) for x in parts[2:] if x.isdigit()) or gifts_by_user.get(target, [])
+            if res.get("ok") and gift_ids:
+                send(target, "🎁 <b>وهاي هداياك ويا السي في</b> 👇")
+                g = tg("copyMessages", chat_id=target, from_chat_id=chat_id, message_ids=sorted(gift_ids))
+                status += " + الهدايا 🎁" if g.get("ok") else " (الهدايا ما انرسلت)"
+            if res.get("ok"):
+                send(target, f"🤝 هسه السي في مالتك ضمن المرشحين عدنا بـ <b>{COMPANY}</b>، "
+                             "ونرشحك للشركات اللي تطلب حسب مؤهلاتك.\n"
+                             "🎓 وإذا تريد تتجهز أكثر، شوف كورسات المقابلات والمندبة من /start")
         else:
             text = ("❌ ما گدرنا نتأكد من وصول الدفع.\nإذا حوّلت المبلغ، اكتب /start واختار التواصل مع الإدارة."
                     if PAID else "عذراً، نحتاج نراجع معلوماتك 🙏 تگدر تعيد التقديم من /start أو راح نتواصل وياك.")
@@ -1822,6 +2122,10 @@ def handle_update(upd):
     elif not sess:
         if PAID and (msg.get("photo") or msg.get("document")):
             handle_payment_proof(chat_id, None, msg)  # e.g. the server restarted while they were paying
+        elif chat_id in pending_payments and not cmd:
+            mins = int((time.time() - pending_payments[chat_id]["t"]) / 60)
+            send(chat_id, f"⏳ طلبك قيد التحقق من الدفع (من {mins} دقيقة).\n"
+                          "أول ما يتأكد يوصلك السي في والهدايا هنا 🤍")
         elif ai.enabled() and (len(clean(text)) >= 40 or msg.get("voice") or msg.get("audio")):
             # they just wrote (or said) their details without pressing anything: start the CV right away
             sess = new_session(chat_id, "cv", "talk", msg.get("from") or {})
@@ -1838,8 +2142,8 @@ def handle_update(upd):
         res = forward_to_admin(chat_id, msg, f"💬 <b>رسالة من</b> {user_handle(sess['data'].get('tg_user'), chat_id)}\n"
                                              "<i>(رد على هذي الرسالة حتى يوصل ردك للشخص)</i>")
         sessions.pop(chat_id, None)
-        send(chat_id, "✅ وصلت رسالتك للإدارة، وراح يردون عليك هنا قريباً 🤍" if res.get("ok")
-             else "صار خطأ بالإرسال 😔 جرب مرة ثانية من /start")
+        send(chat_id, "✅ وصلت رسالتك للإدارة، وراح نرد عليك هنا قريباً 🤍" if res.get("ok")
+             else "صار خطأ بالإرسال 😔 جرّب مرة ثانية من /start")
 
 
 # =================================================================== web
@@ -1984,6 +2288,17 @@ def self_test():
         pdf = build_cv(latinize(d), None)
         pages = len(re.findall(rb"/Type\s*/Page[^s]", pdf))
         out.append(f"cv pdf: {'OK' if pdf[:4] == b'%PDF' else 'BAD'} ({len(pdf) // 1024} KB, {pages} page)")
+        img = extras.preview_image(pdf)
+        out.append("preview image (before payment): " + (f"OK ({len(img) // 1024} KB)" if img else "FAILED (no PDF renderer)"))
+        out.append("face detector for photos: " + ("ready" if photos.detector_ready() else "missing (uses a centred crop)"))
+        ats, cover = extras.build_ats_cv(latinize(d)), extras.build_cover_letter(latinize(d), None)
+        out.append(f"gift files: ATS CV {'OK' if ats[:4] == b'%PDF' else 'BAD'}, cover letter {'OK' if cover[:4] == b'%PDF' else 'BAD'}")
+        if used_ai:
+            started = time.time()
+            gifts, how4 = ai.write_extras(gift_facts(d))
+            qa_count = len((gifts or {}).get("interview") or [])
+            out.append(f"gifts AI: {'OK ' + how4 if gifts else 'FAILED (' + how4 + ')'}, {qa_count} interview questions, "
+                       f"letter {len((gifts or {}).get('cover_letter_en') or '')} chars, in {time.time() - started:.0f}s")
     except Exception as e:
         log.exception("self-test failed")
         out.append(f"cv pipeline: FAILED {e.__class__.__name__}: {str(e)[:150]}")
