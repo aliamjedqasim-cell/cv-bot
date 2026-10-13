@@ -227,7 +227,8 @@ def _field(d):
 
 
 def is_student(d):
-    return not re.fullmatch(r"(19|20)\d{2}", str(d.get("edu_status") or "").strip())
+    status = str(d.get("edu_status") or "").strip()
+    return bool(status) and not re.fullmatch(r"(19|20)\d{2}", status)
 
 
 def edu_status_text(d):

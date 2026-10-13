@@ -16,12 +16,14 @@ Environment variables (Render -> Environment). Only BOT_TOKEN is required:
     PUBLIC_URL        only needed outside Render (Render provides RENDER_EXTERNAL_URL)
 """
 import hashlib
+import io
 import json
 import logging
 import os
 import re
 import threading
 import time
+import zipfile
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 
@@ -114,8 +116,9 @@ MENU = [
 ]
 WELCOME = (
     "أهلاً وسهلاً 👋\n\n"
-    "هذا البوت يساعدك تسوي <b>سيرة ذاتية احترافية بالإنگليزي</b> للوظائف بالقطاع الطبي، "
-    "وتنشر إعلانات الوظائف، وتتواصل ويا الإدارة.\n\n"
+    "هذا البوت يسويلك <b>سيرة ذاتية احترافية بالإنگليزي</b> للوظائف بالقطاع الطبي والمبيعات، "
+    "<b>بالذكاء الاصطناعي</b> 🤖: احچي عن نفسك بالعربي عادي، أو دز بصمة صوت 🎤، وهو يرتب كلشي.\n\n"
+    "وتگدر تنشر إعلان وظيفة، أو تتواصل ويا الإدارة.\n\n"
     "اختار شنو تحتاج 👇\n\n"
     "🔒 <i>معلوماتك تُستخدم فقط لإعداد سيرتك الذاتية وترشيحك لفرص عمل مناسبة، وما تنشر بشكل عام.</i>"
 )
@@ -420,13 +423,46 @@ def cv_intro():
     return intro, esc(TEMPLATE), buttons, [[steps_btn]]
 
 
+TALK_INTRO = (
+    "📝 <b>إنشاء سيرة ذاتية</b> 🤖\n\n"
+    "احچيلي عن نفسك <b>برسالة وحدة، بالعربي عادي وبدون ترتيب</b>:\n"
+    "👤 اسمك، رقم هاتفك، ومحافظتك\n"
+    "🎯 الوظيفة اللي تريدها\n"
+    "🎓 دراستك: الشهادة، التخصص، الجامعة، وسنة التخرج أو المرحلة\n"
+    "💼 خبراتك إذا عندك: وين، شنو كان شغلك، وشگد\n"
+    "➕ أي شي ثاني يفيد: مهارات، دورات، لغات، إجازة سوق...\n\n"
+    "🎤 تگدر <b>تدز بصمة صوت</b> بدل الكتابة\n"
+    "📄 أو دز <b>السي في القديم</b> مالتك (PDF أو Word)\n\n"
+    "وأنا أفهم كلشي وأكتبه بالإنگليزي باحتراف ✨، وأسألك <b>بس عن الناقص</b>.\n\n"
+    "💬 <b>مثال:</b>\n<i>اني علي حسن كريم من بغداد الكرادة، رقمي 07701234567، خريج صيدلة جامعة بغداد 2022، "
+    "اشتغلت سنتين مندوب علمي بشركة بيونير أزور الأطباء والصيدليات، أريد شغل مندوب طبي، الإنگليزي جيد وعندي سيارة</i>"
+)
+
+
 def start_cv(chat_id, user):
-    new_session(chat_id, "cv", "form", user)
-    intro, form_text, buttons, plain_buttons = cv_intro()
-    send(chat_id, intro, remove_keyboard=True)
+    if not ai.enabled():  # no AI key: the copyable form, read by form.py
+        new_session(chat_id, "cv", "form", user)
+        intro, form_text, buttons, plain_buttons = cv_intro()
+        send(chat_id, intro, remove_keyboard=True)
+        res = send(chat_id, form_text, inline=buttons)
+        if not res.get("ok") and buttons != plain_buttons:  # an old Telegram app without copy buttons
+            send(chat_id, form_text, inline=plain_buttons)
+        return
+    sess = new_session(chat_id, "cv", "talk", user)
+    sess["talk"], sess["rounds"] = [], 0
+    price = f"\n\n💰 كلفة الخدمة: <b>{PRICE_IQD:,} دينار</b>، تدفعها بالأخير." if PAID else ""
+    send(chat_id, TALK_INTRO + price, remove_keyboard=True, inline=[
+        [{"text": "📋 أفضّل أعبّي كليشة", "callback_data": "u:form"},
+         {"text": "🗣️ أفضّل سؤال سؤال", "callback_data": "u:steps"}]])
+
+
+def send_form(chat_id):
+    _, form_text, buttons, plain_buttons = cv_intro()
+    send(chat_id, "انسخ الكليشة، عبّيها، ودزها برسالة وحدة 👇 (الخانة اللي ما عندك اتركها فارغة)")
+    buttons = [row for row in buttons if not any(b.get("callback_data") == "u:steps" for b in row)] or None
     res = send(chat_id, form_text, inline=buttons)
-    if not res.get("ok") and buttons != plain_buttons:  # an old Telegram app without copy buttons
-        send(chat_id, form_text, inline=plain_buttons)
+    if not res.get("ok"):
+        send(chat_id, form_text)
 
 
 def start_steps(chat_id, sess):
@@ -437,7 +473,9 @@ def start_steps(chat_id, sess):
 
 # ============================================================ one-message form
 def missing_steps(d):
-    """After the one-message form: the questions that still need an answer, in order."""
+    """After the one-message form / AI conversation: the questions that still need an answer, in order.
+    Things the AI conversation already asked once (d["_asked"]) are not asked again."""
+    asked = set(d.get("_asked") or [])
     steps = []
     if not d.get("full_name"):
         steps.append("name")
@@ -452,16 +490,16 @@ def missing_steps(d):
     if d.get("degree_level") != HIGH_SCHOOL:
         if not d.get("specialty"):
             steps.append("specialty")
-        if not d.get("university"):
+        if not d.get("university") and "university" not in asked:
             steps.append("university")
-    if not d.get("edu_status"):
+    if not d.get("edu_status") and "edu_status" not in asked:
         steps.append("edu_status")
-    if not d.get("english"):
+    if not d.get("english") and "english" not in asked:
         steps.append("english")
     if is_field_role(d):
-        if d.get("survey") is None:
+        if d.get("survey") is None and not d.get("_talk"):
             steps.append("survey")
-        if not d.get("licence"):
+        if not d.get("licence") and "licence" not in asked:
             steps.append("licence")
     if not d.get("_photo_asked"):
         steps.append("photo")
@@ -599,6 +637,231 @@ def handle_form(chat_id, sess, msg):
 
 
 
+
+
+# ======================================================= AI conversation
+TALK_ASK = {  # what is missing -> how the AI conversation asks for it (all in one message)
+    "name": "👤 اسمك الثلاثي",
+    "phone": "📞 رقم هاتفك",
+    "job_title": "🎯 شنو الوظيفة اللي تريدها؟ (مثلاً مندوب طبي، صيدلاني، مندوب مبيعات)",
+    "city": "📍 محافظتك ومنطقتك",
+    "degree": "🎓 شهادتك وتخصصك (مثلاً بكالوريوس صيدلة، دبلوم تحليلات، أو سادس إعدادي)",
+    "university": "🏛️ اسم الجامعة أو الكلية أو المعهد",
+    "edu_status": "📅 سنة تخرجك، أو إذا بعدك طالب شگد مرحلتك",
+    "experience": "💼 عندك خبرة شغل؟ إذا اي: وين، شنو كان شغلك، وشگد. وإذا ماكو اكتب <b>ماكو</b>",
+    "english": "🇬🇧 مستوى الإنگليزي عندك (ممتاز، جيد جداً، جيد، متوسط، ضعيف)",
+    "licence": "🚗 عندك إجازة سوق وسيارة؟",
+}
+ESSENTIAL = ("name", "phone", "job_title", "city", "degree")
+CONFIRM_WORDS = {"تمام", "اوكي", "اوك", "ok", "okay", "صح", "صحيح", "كلشي صحيح", "كلشي تمام", "ارسل", "دز", "دزه",
+                 "ارسله", "موافق", "تم", "اي", "نعم", "yes", "send", "تمام دزه", "تمام ارسل", "عاشت ايدك"}
+
+
+def talk_missing(d, first_round):
+    out = []
+    if not d.get("full_name"):
+        out.append("name")
+    if not d.get("phone"):
+        out.append("phone")
+    if not d.get("job_title"):
+        out.append("job_title")
+    if not d.get("city"):
+        out.append("city")
+    if not d.get("degree_level") or (d["degree_level"] != HIGH_SCHOOL and not d.get("specialty")):
+        out.append("degree")
+    if first_round:
+        if d.get("degree_level") != HIGH_SCHOOL and not d.get("university"):
+            out.append("university")
+        if not d.get("edu_status"):
+            out.append("edu_status")
+        if not d.get("experiences") and d.get("has_experience") is not False:
+            out.append("experience")
+        if not d.get("english"):
+            out.append("english")
+        if is_field_role(d) and not d.get("licence"):
+            out.append("licence")
+    return out
+
+
+def conversation_text(sess):
+    parts = []
+    for turn in sess.get("talk") or []:
+        if turn.get("q"):
+            parts.append("سؤال البوت: " + re.sub(r"<[^>]+>", "", turn["q"]))
+        kind = {"voice": "جواب الشخص (بصمة صوت مكتوبة آلياً)", "file": "نص السي في القديم اللي دزه الشخص",
+                "edit": "تصحيح من الشخص على الملخص"}.get(turn.get("kind"), "جواب الشخص")
+        parts.append(f"{kind}: {turn['a']}")
+    return "\n\n".join(parts)
+
+
+def merge_ai(d, data):
+    """Puts a fresh AI reading of the whole conversation into the session; keeps what the AI left empty."""
+    fresh = {"experiences": []}
+    apply_cv_data(fresh, data)
+    for k, v in fresh.items():
+        if k == "_ar":
+            d.setdefault("_ar", {}).update({kk: vv for kk, vv in v.items() if vv})
+        elif k in ("experiences", "has_experience"):
+            continue
+        elif v not in (None, "", []):
+            d[k] = v
+    if fresh.get("degree_level") == HIGH_SCHOOL:
+        d.update(specialty="High School", degree=HIGH_SCHOOL, university="")
+    if fresh.get("experiences"):
+        d["experiences"], d["has_experience"] = fresh["experiences"], True
+    elif data.get("has_experience") is False:
+        d["experiences"], d["has_experience"] = [], False
+        d["customers"], d["products"], d["territory"] = [], "", ""
+    d["_ai"], d["_talk"] = True, True
+
+
+def understood_line(d):
+    ar = d.get("_ar") or {}
+    bits = [ar.get("job_title") or d.get("job_title"), ar.get("city") or d.get("city")]
+    if d.get("degree_level") == HIGH_SCHOOL:
+        bits.append("إعدادية")
+    elif d.get("specialty"):
+        bits.append(ar.get("specialty") or d["specialty"])
+    jobs = len(d.get("experiences") or [])
+    if jobs:
+        bits.append(f"{jobs} خبرة" if jobs > 2 else ("خبرتين" if jobs == 2 else "خبرة وحدة"))
+    return "، ".join(esc(b) for b in bits if b)
+
+
+def first_name(d):
+    ar_name = ((d.get("_ar") or {}).get("name") or "").split()
+    return ar_name[0] if ar_name else (d.get("full_name") or "").split(" ")[0]
+
+
+def file_text(doc, data):
+    """Text of an old CV the applicant sent (PDF or Word)."""
+    name = (doc.get("file_name") or "").lower()
+    mime = doc.get("mime_type") or ""
+    try:
+        if mime == "application/pdf" or name.endswith(".pdf"):
+            from pypdf import PdfReader
+            reader = PdfReader(io.BytesIO(data))
+            return "\n".join((page.extract_text() or "") for page in reader.pages[:4])
+        if name.endswith(".docx") or "wordprocessingml" in mime:
+            with zipfile.ZipFile(io.BytesIO(data)) as z:
+                xml = z.read("word/document.xml").decode("utf-8", "ignore")
+            xml = re.sub(r"</w:p>|<w:br/>|<w:tab/>", "\n", xml)
+            return re.sub(r"<[^>]+>", "", xml).replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
+    except Exception as e:
+        log.warning("old CV could not be read: %s", e)
+    return ""
+
+
+def voice_text(chat_id, msg):
+    """Voice note / audio -> text (Groq Whisper). Returns None when there is no voice in the message."""
+    media = msg.get("voice") or msg.get("audio") or msg.get("video_note")
+    if not media:
+        return None
+    if not ai.enabled():
+        send(chat_id, "🎤 البصمات ما مفعّلة هسه، اكتب جوابك رجاءً 🙏")
+        return ""
+    if (media.get("duration") or 0) > 300:
+        send(chat_id, "🎤 البصمة طويلة هواية، خليها أقل من ٥ دقايق رجاءً 🙏")
+        return ""
+    tg("sendChatAction", chat_id=chat_id, action="typing")
+    audio = download_file(media["file_id"], max_bytes=20 * 1024 * 1024)
+    text, how = ai.transcribe(audio, "voice.ogg" if msg.get("voice") else (media.get("file_name") or "audio.mp3"))
+    if not text:
+        log.warning("voice not understood: %s", how)
+        send(chat_id, "🎤 ما گدرت أسمع البصمة زين 😅 عيدها بصوت أوضح، أو اكتب رجاءً.")
+        return ""
+    send(chat_id, "🎤 سمعتك: <i>" + esc(text[:350]) + ("..." if len(text) > 350 else "") + "</i>")
+    return text
+
+
+def handle_talk(chat_id, sess, msg, kind="text"):
+    """The AI conversation: the applicant talks freely; the AI reads everything said so far; the bot asks
+    once, in one message, for what is still missing, and then only essential gaps by buttons."""
+    d = sess["data"]
+    raw = (msg.get("text") or msg.get("caption") or "").replace("\u200f", "").replace("\u200e", "")
+    text = "\n".join(clean(x) for x in raw.splitlines() if clean(x))  # keep the lines (forms, lists)
+    doc = msg.get("document") or {}
+    if msg.get("photo") or (doc.get("mime_type") or "").startswith("image/"):
+        sess["photo"] = download_file(msg["photo"][-1]["file_id"] if msg.get("photo") else doc["file_id"])
+        d["_photo_asked"] = bool(sess["photo"])
+        send(chat_id, "📸 حفظت صورتك الشخصية للسي في ✅" + ("" if text or sess.get("talk") else
+                      "\nهسه احچيلي عن نفسك (كتابة أو بصمة 🎤) 👆"))
+        if not text:
+            return
+    elif doc:
+        data = download_file(doc["file_id"], max_bytes=10 * 1024 * 1024)
+        text = "\n".join(clean(x) for x in file_text(doc, data or b"").splitlines() if clean(x))[:6000]
+        if len(text) < 30:
+            send(chat_id, "📄 ما گدرت أقرأ الملف 😅 دزه <b>PDF</b> أو <b>Word</b>، أو اكتب معلوماتك، أو دز بصمة 🎤")
+            return
+        kind = "file"
+        send(chat_id, "📄 وصلني السي في القديم، دا أقرأه...")
+    if len(text) < (2 if sess.get("talk") else 12):
+        send(chat_id, "احچيلي عن نفسك أكثر 🙏 اسمك، دراستك، شغلك، والوظيفة اللي تريدها.\n"
+                      "🎤 أو دز بصمة صوت، أسهل.")
+        return
+    sess.setdefault("talk", []).append({"q": sess.pop("last_q", None), "a": text[:4000], "kind": kind})
+    if kind != "file":
+        send(chat_id, "⏳ لحظات، دا أفهم معلوماتك وأرتبها...", remove_keyboard=True)
+    tg("sendChatAction", chat_id=chat_id, action="typing")
+    data, how = ai.read_cv(conversation_text(sess))
+    if not data:
+        log.warning("AI conversation failed (%s); falling back", how)
+        fields = parse_form(text)
+        if fields:
+            apply_cv_data(d, convert_form(fields))
+            d["_mt"] = True
+            send(chat_id, "✅ رتّبت معلوماتك. باقي كم سؤال صغير 👇")
+        else:
+            send(chat_id, "الذكاء الاصطناعي عليه ضغط هسه 😅 راح أكمل وياك بأسئلة سريعة.")
+        sess["fill"], sess["fill_total"] = True, len(missing_steps(d))
+        sess["step"] = "talk_done"
+        go_next(chat_id, sess)
+        return
+    log.info("conversation read by AI (%s)", how)
+    merge_ai(d, data)
+    first_round = sess.get("rounds", 0) == 0
+    todo = talk_missing(d, first_round)
+    if todo and sess.get("rounds", 0) < 2:
+        sess["rounds"] = sess.get("rounds", 0) + 1
+        d["_asked"] = sorted(set(d.get("_asked") or []) | set(todo))
+        name = first_name(d)
+        got = understood_line(d)
+        question = ((f"✅ تمام{' ' + esc(name) if name else ''}، فهمت معلوماتك" + (f": {got}" if got else "") + ".\n\n")
+                    + ("باقي عندي بس هذني، جاوبهن <b>برسالة وحدة</b> (كتابة أو بصمة 🎤):\n\n" if len(todo) > 1
+                       else "باقي شغلة وحدة 👇\n\n")
+                    + "\n".join(TALK_ASK[k] for k in todo))
+        sess["last_q"] = question
+        send(chat_id, question)
+        return
+    # the rest: only essential gaps, one by one with buttons; then the photo and the summary
+    sess["fill"], sess["step"] = True, "talk_done"
+    sess["fill_total"] = len(missing_steps(d))
+    rest = missing_steps(d)
+    if rest and rest != ["photo"]:
+        send(chat_id, "✅ تمام، باقي كم شغلة صغيرة بالأزرار 👇")
+    elif rest == ["photo"]:
+        send(chat_id, "✅ تمام" + (f" {esc(first_name(d))}" if first_name(d) else "") + "، رتّبت كل معلوماتك 👌")
+    go_next(chat_id, sess)
+
+
+def handle_ai_edit(chat_id, sess, text, kind="edit"):
+    """At the summary: a typed (or spoken) correction is applied by the AI; a short 'ok' sends the CV."""
+    if norm(text).strip(" .!؟?") in {norm(w) for w in CONFIRM_WORDS}:
+        finish_cv(chat_id, sess)
+        return
+    sess.setdefault("talk", []).append({"q": "راجع الملخص، إذا أكو شي غلط اكتب التصحيح", "a": text[:1500],
+                                        "kind": "edit"})
+    send(chat_id, "⏳ دا أعدّل...")
+    tg("sendChatAction", chat_id=chat_id, action="typing")
+    data, how = ai.read_cv(conversation_text(sess))
+    if not data:
+        sess["talk"].pop()
+        send(chat_id, "ما گدرت أعدّل هسه 😅 استخدم زر <b>✏️ تعديل معلومة</b> تحت الملخص.")
+        return
+    merge_ai(sess["data"], data)
+    send(chat_id, "✅ عدّلتها")
+    show_summary(chat_id, sess)
 
 
 # ========================================================== CV questions
@@ -763,9 +1026,11 @@ def summary_text(sess):
     else:
         lines.append("💼 <b>الخبرة:</b> بدون خبرة سابقة")
     if is_field_role(d):
-        lines.append("📊 <b>مسح ميداني:</b> " + ("نعم" if d.get("survey") else "لا"))
-        lines.append("🚗 <b>السياقة:</b> " + {"car": "إجازة سوق + سيارة", "licence": "إجازة سوق بدون سيارة"}.get(
-            d.get("licence"), "بدون إجازة سوق"))
+        if d.get("survey") is not None or not d.get("_talk"):
+            lines.append("📊 <b>مسح ميداني:</b> " + ("نعم" if d.get("survey") else "لا"))
+        if d.get("licence") or not d.get("_talk"):
+            lines.append("🚗 <b>السياقة:</b> " + {"car": "إجازة سوق + سيارة", "licence": "إجازة سوق بدون سيارة"}.get(
+                d.get("licence"), "بدون إجازة سوق"))
     if d.get("skills"):
         lines.append(line("💪 <b>المهارات:</b>", ar.get("skills"), d["skills"]))
     else:
@@ -784,7 +1049,11 @@ def summary_text(sess):
     lines.append("📸 <b>الصورة:</b> " + ("موجودة" if sess.get("photo") else "بدون صورة"))
     if d.get("age"):
         lines.insert(5, f"🎂 <b>العمر:</b> {esc(d['age'])}")
-    if d.get("_ai"):
+    if d.get("_talk") and ai.enabled():
+        lines.append("\n🤖 <i>رتّبت معلوماتك وكتبتها بالإنگليزي بالذكاء الاصطناعي.</i>\n"
+                     "✍️ إذا أكو شي غلط، <b>اكتب التصحيح بكلامك</b> هنا، مثل: <i>غيّر المحافظة للبصرة</i>، "
+                     "أو دز بصمة 🎤. وإذا كلشي تمام اضغط <b>✅ تأكيد وإرسال</b>.")
+    elif d.get("_ai"):
         lines.append("\n🤖 <i>رتّبت معلوماتك وكتبتها بالإنگليزي بالذكاء الاصطناعي. "
                      "تأكد منها، وإذا شي مو مضبوط اضغط ✏️ تعديل.</i>")
     elif d.get("_mt"):
@@ -901,11 +1170,30 @@ def add_extras(chat_id, sess, raw, prefix):
 
 def handle_cv_answer(chat_id, sess, msg):
     step, d = sess["step"], sess["data"]
+    kind = "text"
+    if step not in ("photo", "payment"):
+        spoken = voice_text(chat_id, msg)  # a voice note works as an answer anywhere
+        if spoken is not None:
+            if not spoken:
+                return
+            msg, kind = {**msg, "text": spoken}, "voice"
+    if step == "talk":
+        handle_talk(chat_id, sess, msg, kind)
+        return
     raw = (msg.get("text") or "").replace("‏", "").replace("‎", "")
     text = clean(raw)
     skipped = text in (SKIP, "/skip", "skip", "Skip", "تخطي")
 
     if step == "confirm":
+        if msg.get("photo") or ((msg.get("document") or {}).get("mime_type") or "").startswith("image/"):
+            fid = msg["photo"][-1]["file_id"] if msg.get("photo") else msg["document"]["file_id"]
+            sess["photo"] = download_file(fid) or sess.get("photo")
+            send(chat_id, "📸 ضفت صورتك للسي في ✅")
+            show_summary(chat_id, sess)
+            return
+        if text and d.get("_talk") and ai.enabled():
+            handle_ai_edit(chat_id, sess, text)
+            return
         send(chat_id, "اضغط <b>✅ تأكيد وإرسال</b> أو <b>✏️ تعديل</b> تحت الملخص 👆")
         return
     if step == "payment":
@@ -1303,6 +1591,8 @@ def handle_callback(cq):
         if data == "m:resume" and sess and sess["mode"] == "cv":
             if sess["step"] == "form":
                 start_cv(chat_id, user)
+            elif sess["step"] == "talk":
+                send(chat_id, sess.get("last_q") or TALK_INTRO)
             elif sess["step"] == "payment":
                 send(chat_id, payment_message())
             elif sess["step"] == "confirm":
@@ -1337,9 +1627,12 @@ def handle_callback(cq):
         elif data == "u:restart":
             drop_buttons()
             start_cv(chat_id, user)
-        elif data == "u:steps" and sess["step"] == "form":
+        elif data == "u:steps" and sess["step"] in ("form", "talk"):
             drop_buttons()
             start_steps(chat_id, sess)
+        elif data == "u:form" and sess["step"] == "talk":
+            drop_buttons()
+            send_form(chat_id)
         elif data.startswith("e:") and sess["step"] == "confirm":
             drop_buttons()
             if data == "e:back":
@@ -1456,6 +1749,10 @@ def handle_update(upd):
     if cmd == "/myid":
         send(chat_id, f"🆔 رقم المحادثة مالتك:\n<code>{chat_id}</code>")
         return
+    if cmd == "/setphoto" and is_admin:
+        res = set_profile_photo()
+        send(chat_id, "✅ تغيّرت صورة البوت" if res.get("ok") else f"⚠️ ما تغيّرت: {esc(res.get('description'))}")
+        return
     if cmd == "/status" and is_admin:
         tg("sendChatAction", chat_id=chat_id, action="typing")
         send(chat_id, "🔧 <b>حالة البوت</b>\n"
@@ -1485,8 +1782,14 @@ def handle_update(upd):
     elif not sess:
         if PAID and (msg.get("photo") or msg.get("document")):
             handle_payment_proof(chat_id, None, msg)  # e.g. the server restarted while they were paying
+        elif ai.enabled() and (len(clean(text)) >= 40 or msg.get("voice") or msg.get("audio")):
+            # they just wrote (or said) their details without pressing anything: start the CV right away
+            sess = new_session(chat_id, "cv", "talk", msg.get("from") or {})
+            sess["talk"], sess["rounds"] = [], 0
+            send(chat_id, "📝 تمام، راح أسويلك سيرة ذاتية من معلوماتك 🤖")
+            handle_cv_answer(chat_id, sess, msg)
         else:
-            send(chat_id, "أهلاً 👋 اكتب /start حتى تشوف القائمة", remove_keyboard=True)
+            show_menu(chat_id)
     elif sess["mode"] == "cv":
         handle_cv_answer(chat_id, sess, msg)
     elif sess["mode"] == "ad":
@@ -1543,7 +1846,8 @@ def health_details():
               f"payment: {'on' if PAID else 'off (free)'}",
               f"channel: {'set' if CHANNEL_ID else 'not set'}",
               f"ai key: {'set' if ai.enabled() else 'not set'}",
-              f"keep awake: {'on' if any(t.name == 'keep-awake' for t in threading.enumerate()) else 'off'}"]
+              f"keep awake: {'on' if any(t.name == 'keep-awake' for t in threading.enumerate()) else 'off'}",
+              f"bot picture/description: {stats.get('profile', 'not checked yet')}"]
     mins = lambda t: f"{int((time.time() - t) / 60)} min ago" if t else "never"
     lines += [f"server started: {mins(stats['started'])}",
               f"messages received: {stats['received']} (last: {mins(stats['last_received'])})",
@@ -1596,7 +1900,7 @@ def self_test():
         out.append("send to admin: " + ("OK (silent, deleted)" if res.get("ok") else f"FAILED ({res.get('description')})"))
         intro, form_text, buttons, _ = cv_intro()
         checks = []
-        for text, markup in ((intro, None), (form_text, {"inline_keyboard": buttons})):
+        for text, markup in ((TALK_INTRO, None), (intro, None), (form_text, {"inline_keyboard": buttons})):
             params = {"chat_id": ADMIN_CHAT_ID, "text": text, "parse_mode": "HTML", "disable_notification": True}
             if markup:
                 params["reply_markup"] = markup
@@ -1604,13 +1908,30 @@ def self_test():
             if r.get("ok"):
                 tg("deleteMessage", chat_id=ADMIN_CHAT_ID, message_id=r["result"]["message_id"])
             checks.append("OK" if r.get("ok") else f"FAILED ({r.get('description')})")
-        out.append(f"cv start messages: intro {checks[0]}, form with copy button {checks[1]}")
+        out.append(f"cv start messages: AI intro {checks[0]}, form intro {checks[1]}, form with copy button {checks[2]}")
     started = time.time()
     data, how = ai.read_cv(SELF_TEST_TEXT) if ai.enabled() else (None, "no key")
     used_ai = bool(data)
     out.append(f"ai reader: {'OK ' + how if data else 'not used (' + how + ')'} in {time.time() - started:.0f}s")
     if not data:
         data = convert_form(parse_form(SELF_TEST_TEXT) or {})
+    if used_ai:
+        started = time.time()
+        convo = ("جواب الشخص: اني علي حسن كريم من بغداد، رقمي 07701234567، خريج صيدلة جامعة بغداد 2022، "
+                 "أريد شغل مندوب طبي\n\nتصحيح من الشخص على الملخص: غيّر المحافظة للبصرة")
+        edit, how2 = ai.read_cv(convo)
+        city = (edit or {}).get("city_en") or ""
+        out.append(f"ai correction: {'OK' if 'basra' in city.lower() else 'CHECK'} (city={city or how2}) "
+                   f"in {time.time() - started:.0f}s")
+        import wave
+        buf = io.BytesIO()
+        with wave.open(buf, "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(16000)
+            w.writeframes(b"\x00\x00" * 16000)
+        text, how3 = ai.transcribe(buf.getvalue(), "test.wav")
+        out.append("voice to text: " + ("OK" if text or how3 == "empty" else f"FAILED ({how3})"))
     d = {"tg_user": {}, "experiences": []}
     try:
         apply_cv_data(d, data)
@@ -1712,6 +2033,40 @@ def webhook():
     return "ok"
 
 
+SHORT_DESC = "سيرة ذاتية احترافية بالإنگليزي للقطاع الطبي والمبيعات بالذكاء الاصطناعي 🤖 احچي بالعربي أو دز بصمة صوت 🎤"
+LONG_DESC = ("🩺 Medical CV\n\n"
+             "يسويلك سيرة ذاتية احترافية بالإنگليزي للوظائف الطبية والمبيعات خلال دقايق، بالذكاء الاصطناعي 🤖\n\n"
+             "✍️ احچي عن نفسك بالعربي عادي، أو دز بصمة صوت 🎤، أو السي في القديم مالتك\n"
+             "📄 تستلم السي في PDF جاهز بتصميم احترافي\n"
+             "💼 ونرشحك لفرص عمل مناسبة بالشركات\n\n"
+             "اضغط Start 👇")
+AVATAR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "avatar.jpg")
+
+
+def set_profile_photo():
+    try:
+        with open(AVATAR, "rb") as f:
+            r = http.post(f"{API}/setMyProfilePhoto", timeout=60,
+                          data={"photo": json.dumps({"type": "static", "photo": "attach://avatar"})},
+                          files={"avatar": ("avatar.jpg", f.read(), "image/jpeg")})
+        return r.json()
+    except Exception as e:
+        return {"ok": False, "description": e.__class__.__name__}
+
+
+def setup_profile():
+    """The bot's picture and descriptions, set once (the short description doubles as the 'done' marker)."""
+    current = (tg("getMyShortDescription").get("result") or {}).get("short_description", "")
+    if current == SHORT_DESC:
+        stats["profile"] = "set earlier"
+        return
+    res = set_profile_photo()
+    stats["profile"] = "picture set" if res.get("ok") else f"picture failed ({res.get('description')})"
+    log.info("bot profile: %s", stats["profile"])
+    tg("setMyDescription", description=LONG_DESC)
+    tg("setMyShortDescription", short_description=SHORT_DESC)
+
+
 def register_webhook():
     global BOT_USERNAME
     if not TOKEN or not PUBLIC_URL:
@@ -1728,6 +2083,7 @@ def register_webhook():
                 {"command": "cv", "description": "إنشاء سيرة ذاتية"},
                 {"command": "cancel", "description": "إلغاء"},
             ])
+            setup_profile()
             return
         time.sleep(3 * (attempt + 1))
 

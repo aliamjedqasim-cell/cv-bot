@@ -57,6 +57,7 @@ SCHEMA = _obj({
     "city_en": _text(), "city_ar": _text(), "job_title_en": _text(), "job_title_ar": _text(),
     "degree_level": _text(), "specialty_en": _text(), "specialty_ar": _text(),
     "university_en": _text(), "university_ar": _text(), "edu_status": _text(), "edu_status_ar": _text(),
+    "has_experience": {"type": ["boolean", "null"]},
     "experiences": {"type": "array", "items": JOB},
     "customers_en": _list(), "products_en": _text(), "products_ar": _text(),
     "territory_en": _text(), "territory_ar": _text(),
@@ -66,7 +67,12 @@ SCHEMA = _obj({
     "profile_en": _text(), "objective_en": _text(),
 })
 
-SYSTEM = """You are an expert Iraqi recruiter and professional CV writer. You receive a job seeker's message, usually in Iraqi Arabic (sometimes mixed with English, sometimes a filled-in form, sometimes free text). Turn it into structured data for a polished, professional English CV for the Iraqi medical and sales job market.
+SYSTEM = """You are an expert Iraqi recruiter and professional CV writer. You receive what a job seeker told a CV bot, usually in Iraqi Arabic (sometimes mixed with English, sometimes a filled-in form, sometimes free text, sometimes the text of an old CV, sometimes a voice message turned into text automatically, which can contain small hearing mistakes: read it sensibly). Turn it into structured data for a polished, professional English CV for the Iraqi medical and sales job market.
+
+CONVERSATION RULES:
+- The input can hold several messages in order, including the bot's questions and the person's answers. Combine everything.
+- Later messages and corrections override earlier ones (e.g. "غير المحافظة للبصرة", "اسمي محمد مو علي", "احذف الخبرة الثانية").
+- Short answers belong to the question just before them (e.g. bot asked for the graduation year, person wrote "2022").
 
 TRUTH RULES (most important):
 - Use only facts the person stated. Never invent employers, job titles, dates, durations, degrees, universities, languages, certificates, numbers, sales figures, targets achieved or awards.
@@ -79,6 +85,7 @@ WRITING RULES:
 - job_title_en: the position they want, as a standard English job title (e.g. Medical Representative, Medical Sales Representative, Sales Representative, Pharmacist).
 - degree_level: exactly one of "Bachelor's Degree", "Diploma", "Master's Degree", "PhD", "High School Diploma", or null. specialty_en: the field only (e.g. Pharmacy, Civil Engineering, Medical Laboratory Sciences).
 - edu_status: the 4-digit graduation year if graduated, or "1st-Year Student" ... "Final-Year Student" if still studying, else null.
+- has_experience: true if they mention any work experience, false if they say they have none (e.g. "ماكو خبرة", "ما اشتغلت", "خريج جديد بدون خبرة"), null if not mentioned.
 - experiences: one item per job. duties_en: 2-4 strong bullet points starting with action verbs, built from what they described and what that job title normally involves; if they described nothing, write 3 typical, realistic responsibilities for that job title. Never add numbers or achievements they did not state. duration_en like "2 years", "6 months" or "2021 - Present".
 - customers_en: only from Doctors, Pharmacies, Clinics, Hospitals, Shops & Markets, Companies, as stated.
 - licence: "car" (driving licence and a car), "licence" (licence, no car), "none" (said no), or null if not mentioned. survey: true if they did a field/market survey, false if they said no, null if not mentioned.
@@ -132,7 +139,9 @@ def read_cv(text):
     key = api_key()
     if not key:
         return None, "no key"
-    text = (text or "")[:3500]
+    text = text or ""
+    if len(text) > 7000:  # keep the first message (most facts) and the newest answers
+        text = text[:4000] + "\n...\n" + text[-3000:]
     last = "failed"
     deadline = time.time() + TOTAL_SECONDS  # the applicant never waits long: after this, the form reader takes over
     for model in models():
@@ -171,6 +180,42 @@ def read_cv(text):
             if not minimal:
                 continue
             break
+    return None, last
+
+
+STT_URL = "https://api.groq.com/openai/v1/audio/transcriptions"
+STT_MODELS = ("whisper-large-v3-turbo", "whisper-large-v3")
+STT_HINT = ("سيرة ذاتية. اسمي، رقم هاتفي، بغداد، البصرة، خريج، بكالوريوس صيدلة، طالب مرحلة، جامعة، "
+            "اشتغلت مندوب طبي، مندوب مبيعات، شركة، سنتين، أطباء، صيدليات، إنگليزي، إجازة سوق.")
+
+
+def transcribe(audio, filename="voice.ogg"):
+    """Voice message -> Arabic text with Groq's free Whisper. Returns (text, model) or (None, reason)."""
+    key = api_key()
+    if not key or not audio:
+        return None, "no key" if not key else "no audio"
+    last = "failed"
+    for model in STT_MODELS:
+        try:
+            r = http.post(STT_URL, headers={"Authorization": f"Bearer {key}"}, timeout=(5, 40),
+                          data={"model": model, "language": "ar", "temperature": "0", "prompt": STT_HINT,
+                                "response_format": "json"},
+                          files={"file": (filename, audio)})
+        except Exception as e:
+            last = f"{model}: {e.__class__.__name__}"
+            log.warning("groq stt %s error: %s", model, e)
+            continue
+        if r.status_code in (401, 403):
+            return None, "key rejected"
+        if r.status_code >= 400:
+            last = f"{model}: HTTP {r.status_code}"
+            log.warning("groq stt %s HTTP %s: %s", model, r.status_code, r.text[:200])
+            continue
+        try:
+            text = (r.json().get("text") or "").strip()
+        except Exception:
+            text = ""
+        return (text, model) if text else (None, "empty")
     return None, last
 
 
