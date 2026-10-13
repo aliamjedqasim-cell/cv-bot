@@ -21,11 +21,13 @@ import io
 import json
 import logging
 import os
+import random
 import re
 import threading
 import time
 import zipfile
 from collections import deque
+from datetime import datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor
 
 import requests
@@ -128,7 +130,7 @@ WELCOME = (
     f"أهلاً وسهلاً بيك بـ <b>{COMPANY}</b> 🩺\n"
     f"شركة متخصصة بالتوظيف بالقطاع الطبي والمبيعات، تابعة لـ <b>{PARTNER}</b> 📢\n\n"
     "<b>شنو نقدّملك:</b>\n"
-    "📝 <b>نصمملك سيرة ذاتية CV احترافية بالإنگليزي</b> بالذكاء الاصطناعي 🤖: "
+    "📝 <b>نصمملك سيرة ذاتية CV احترافية بالإنگليزي</b>، ويراجعها ويدققها فريقنا: "
     "احچي عن نفسك بالعربي، أو دز بصمة صوت 🎤\n"
     "🤝 <b>نرشّح السي في مالتك</b> للشركات اللي تطلب مندوبين وموظفين وخدمات\n"
     "🎓 <b>كورسات</b> بالمقابلات الوظيفية والمندبة الطبية\n"
@@ -170,7 +172,7 @@ def courses_text():
               "• خطوات واضحة تطبقها بالمقابلة وبالشغل الميداني",
               "• الدروس تبقى عندك بالبوت، تعيدها متى ما تريد", ""]
     lines.append(f"💰 سعر الكورس الواحد: <b>{COURSE_PRICE:,} دينار</b>" if COURSE_PRICE and PAID
-                 else "💰 السعر وطريقة الدفع تبلغك بيهن الإدارة بعد ما تختار.")
+                 else "💰 السعر وطريقة الدفع يبلغك بيهن أحد موظفينا بعد ما تختار.")
     lines.append("\nاختار الكورس 👇")
     return "\n".join(lines)
 
@@ -470,7 +472,7 @@ def show_menu(chat_id):
 def cv_intro():
     """The two messages that open a CV: instructions, then the form with a one-tap copy button."""
     price = f"\n💰 كلفة الخدمة: <b>{PRICE_IQD:,} دينار</b>، تدفعها بالأخير." if PAID else ""
-    free_text = "🤖 وإذا تحب، اكتب معلوماتك <b>براحتك بدون كليشة</b>، وأنا أفهمها.\n\n" if ai.enabled() else ""
+    free_text = "✍️ وإذا تحب، اكتب معلوماتك <b>براحتك بدون كليشة</b>، وإحنا نرتبها.\n\n" if ai.enabled() else ""
     intro = ("📝 <b>إنشاء سيرة ذاتية</b>\n\n"
              "1️⃣ اضغط زر <b>📋 انسخ الكليشة</b> اللي تحت\n"
              "2️⃣ الصقها برسالة جديدة، وعبّيها <b>بالعربي عادي</b>. الخانة اللي ما عندك اتركها فارغة\n"
@@ -486,7 +488,7 @@ def cv_intro():
 
 
 TALK_INTRO = (
-    "📝 <b>إنشاء سيرة ذاتية</b> 🤖\n\n"
+    "📝 <b>إنشاء سيرة ذاتية</b>\n\n"
     "احچيلي عن نفسك <b>برسالة وحدة، بالعربي عادي وبدون ترتيب</b>:\n"
     "👤 اسمك، رقم هاتفك، ومحافظتك\n"
     "🎯 الوظيفة اللي تريدها\n"
@@ -495,7 +497,7 @@ TALK_INTRO = (
     "➕ أي شي ثاني يفيد: مهارات، دورات، لغات، إجازة سوق...\n\n"
     "🎤 تگدر <b>تدز بصمة صوت</b> بدل الكتابة\n"
     "📄 أو دز <b>السي في القديم</b> مالتك (PDF أو Word)\n\n"
-    "وأنا أفهم كلشي وأكتبه بالإنگليزي باحتراف ✨، وأسألك <b>بس عن الناقص</b>.\n\n"
+    "ونرتب كلشي ونكتبه بالإنگليزي باحتراف ✨، ونسألك <b>بس عن الناقص</b>.\n\n"
     "💬 <b>مثال:</b>\n<i>اني علي حسن كريم من بغداد الكرادة، رقمي 07701234567، خريج صيدلة جامعة بغداد 2022، "
     "اشتغلت سنتين مندوب علمي بشركة بيونير أزور الأطباء والصيدليات، أريد شغل مندوب طبي، الإنگليزي جيد وعندي سيارة</i>"
 )
@@ -1005,7 +1007,7 @@ def handle_talk(chat_id, sess, msg, kind="text"):
             d["_mt"] = True
             send(chat_id, "✅ رتّبت معلوماتك. باقي كم سؤال صغير 👇")
         else:
-            send(chat_id, "الذكاء الاصطناعي عليه ضغط هسه 😅 راح أكمل وياك بأسئلة سريعة.")
+            send(chat_id, "النظام عليه ضغط هسه 😅 راح نكمل وياك بأسئلة سريعة.")
         sess["fill"], sess["fill_total"] = True, len(missing_steps(d))
         sess["step"] = "talk_done"
         go_next(chat_id, sess)
@@ -1252,14 +1254,14 @@ def summary_text(sess):
     if d.get("age"):
         lines.insert(5, f"🎂 <b>العمر:</b> {esc(d['age'])}")
     if d.get("_talk") and ai.enabled():
-        lines.append("\n🤖 <i>رتّبت معلوماتك وكتبتها بالإنگليزي بالذكاء الاصطناعي.</i>\n"
+        lines.append("\n📝 <i>هاي المسودة الأولى من معلوماتك بالإنگليزي، وفريقنا يراجعها ويدققها قبل التسليم.</i>\n"
                      "✍️ إذا أكو شي غلط، <b>اكتب التصحيح بكلامك</b> هنا، مثل: <i>غيّر المحافظة للبصرة</i>، "
                      "أو دز بصمة 🎤. وإذا كلشي تمام اضغط <b>✅ تأكيد وإرسال</b>.")
     elif d.get("_ai"):
-        lines.append("\n🤖 <i>رتّبت معلوماتك وكتبتها بالإنگليزي بالذكاء الاصطناعي. "
+        lines.append("\n📝 <i>هاي المسودة الأولى من معلوماتك بالإنگليزي. "
                      "تأكد منها، وإذا شي مو مضبوط اضغط ✏️ تعديل.</i>")
     elif d.get("_mt"):
-        lines.append("\n🔤 <i>بعض أجوبتك انترجمت تلقائياً. إذا شي مو مضبوط اضغط ✏️ تعديل.</i>")
+        lines.append("\n🔤 <i>راجع شلون انكتبت معلوماتك بالإنگليزي، وإذا شي مو مضبوط اضغط ✏️ تعديل.</i>")
     text = ""
     for item in lines:  # Telegram allows 4096 characters; cut whole lines so no HTML tag is left open
         if len(text) + len(item) > 3900:
@@ -1646,7 +1648,8 @@ def payment_message():
         f"{GIFT_TEASER}\n\n"
         f"💳 حوّل على بطاقة <b>Qi Card</b>:\n{name}رقم البطاقة: <code>{esc(QI_CARD_NUMBER)}</code>\n\n"
         "📸 بعدها دز <b>صورة تأكيد الدفع</b> هنا.\n"
-        "بعد التحقق من الدفع، نرسلك السي في والهدايا هنا مباشرةً.\n\n"
+        "بعد التأكد من الدفع، فريقنا يراجع السي في مالتك ويدققه، ويوصلك ويا الهدايا هنا"
+        f"{' خلال ساعات (بأوقات الدوام)' if CV_DELAY else ''}.\n\n"
         "<i>ملاحظة: ترشيح السيرة الذاتية يعتمد على توفر الفرص ومدى توافق مؤهلاتك مع متطلبات الوظيفة، "
         "ولا يضمن الحصول على مقابلة أو وظيفة.</i>"
     )
@@ -1739,7 +1742,8 @@ def send_preview(chat_id, pdf):
     try:
         r = http.post(f"{API}/sendPhoto", timeout=60, data={
             "chat_id": str(chat_id), "parse_mode": "HTML",
-            "caption": "👀 <b>هذي معاينة للسي في مالتك</b>\nالنسخة الكاملة بجودة عالية توصلك هنا بعد الدفع والتأكد ✅"},
+            "caption": "👀 <b>هذي معاينة للمسودة الأولى من السي في مالتك</b>\n"
+                       "بعد الدفع، فريقنا يراجعها ويدققها، والنسخة النهائية بجودة عالية توصلك هنا ✅"},
             files={"photo": ("preview.jpg", img, "image/jpeg")}).json()
         return bool(r.get("ok"))
     except Exception:
@@ -1759,7 +1763,7 @@ def remind_admin(chat_id, minutes):
 def finish_cv(chat_id, sess):
     d = sess["data"]
     refresh_languages(d)
-    send(chat_id, "⏳ لحظات، جاي أجهز السي في مالتك...", remove_keyboard=True)
+    send(chat_id, "⏳ لحظات، دا نجهز المسودة الأولى للسي في مالتك...", remove_keyboard=True)
     tg("sendChatAction", chat_id=chat_id, action="upload_document")
     try:
         pdf = build_cv(latinize(d), sess.get("photo"))
@@ -1778,11 +1782,11 @@ def finish_cv(chat_id, sess):
     if PAID:
         caption = cv_caption(d, chat_id, f"⏳ <b>بانتظار إثبات الدفع ({PRICE_IQD:,} د.ع)</b>\n"
                                           "⚠️ لا توافق إلا بعد ما تتأكد من وصول المبلغ بتطبيق Qi Card")
-        buttons = [[{"text": "✅ الدفع وصل، أرسل السي في", "callback_data": f"ok:{chat_id}"}],
+        buttons = [[{"text": "✅ الدفع وصل، وافق", "callback_data": f"ok:{chat_id}"}],
                    [{"text": "❌ الدفع ما وصل", "callback_data": f"no:{chat_id}"}]]
     else:
         caption = cv_caption(d, chat_id, "🆕 <b>سي في جديد للمراجعة</b>")
-        buttons = [[{"text": "✅ موافقة وإرسال", "callback_data": f"ok:{chat_id}"},
+        buttons = [[{"text": "✅ موافقة", "callback_data": f"ok:{chat_id}"},
                     {"text": "❌ رفض", "callback_data": f"no:{chat_id}"}]]
     res = send_pdf(ADMIN_CHAT_ID, pdf, filename, caption, inline=buttons)
     if not res.get("ok"):
@@ -1798,7 +1802,7 @@ def finish_cv(chat_id, sess):
         send(chat_id, payment_message())
     else:
         sessions.pop(chat_id, None)
-        send(chat_id, "✅ وصلتنا معلوماتك!\n\nالسي في مالتك هسه <b>قيد المراجعة</b>، "
+        send(chat_id, "✅ وصلتنا معلوماتك!\n\n👩‍💼 السي في مالتك هسه عند موظفينا <b>للمراجعة والموافقة</b>، "
                       "وراح يوصلك هنا أول ما يجهز 🤍\n\n" + GIFT_TEASER)
     ids = make_gifts(chat_id, d, admin_msg)  # the buyer already has their message; this runs meanwhile
     if ids:
@@ -1825,7 +1829,7 @@ def forward_to_admin(chat_id, msg, header, reply_to=None):
 def handle_payment_proof(chat_id, sess, msg):
     is_image = msg.get("photo") or (msg.get("document") or {}).get("mime_type", "").startswith(("image/", "application/pdf"))
     if not is_image:
-        send(chat_id, "📸 دز <b>صورة تأكيد الدفع</b> هنا.\nإذا عندك سؤال، اكتب /start واختار التواصل مع الإدارة.")
+        send(chat_id, "📸 دز <b>صورة تأكيد الدفع</b> هنا.\nإذا عندك سؤال، اكتب /start واختار 💬 تواصل ويانا.")
         return
     d = sess["data"] if sess else {}
     name = f" — {esc(d['full_name'])}" if d.get("full_name") else ""
@@ -1841,12 +1845,218 @@ def handle_payment_proof(chat_id, sess, msg):
             timer.daemon = True
             timer.start()
         send(chat_id, "✅ <b>استلمنا صورة الدفع، شكراً إلك 🤍</b>\n\n"
-                      "⏳ هسه دا نتأكد من وصول المبلغ بتطبيق Qi Card (التأكد يدوي)، "
-                      f"وأول ما يتأكد يوصلك هنا {PAYMENT_WAIT}:\n"
-                      "📄 السي في مالتك\n🎁 ويا الهدايا: نسخة ATS، رسالة تغطية، وتحضير المقابلة\n\n"
+                      "👩‍💼 هسه موظف من فريقنا دا يتأكد من وصول المبلغ، وبعدها نبدي نراجع السي في مالتك "
+                      "وندققه ونجهز النسخة النهائية.\n\n"
+                      "راح يوصلك هنا:\n📄 السي في مالتك\n🎁 ويا الهدايا: نسخة ATS، رسالة تغطية، وتحضير المقابلة\n\n"
                       "ما تحتاج تسوي شي ثاني، بس خلي إشعارات البوت مفتوحة 🔔")
     else:
         send(chat_id, "صار خطأ بالإرسال 😔 دز الصورة مرة ثانية")
+
+
+# ======================================================= scheduled delivery
+# After approval the CV is not sent at once: the buyer is told our team is preparing the final copy, and it
+# arrives a few hours later, only in working hours (Baghdad time); approved at night -> next morning.
+# The queue lives in memory and in one pinned message in the admin chat, so a restart or deploy loses nothing.
+def _minutes(name, default):
+    raw = os.environ.get(name, "").strip()
+    return int(re.sub(r"\D", "", raw)) if re.sub(r"\D", "", raw) else default
+
+
+def _work_hours():
+    m = [int(x) for x in re.findall(r"\d+", os.environ.get("WORK_HOURS", ""))]
+    return (m[0], m[1]) if len(m) >= 2 and 0 <= m[0] < m[1] <= 24 else (10, 22)
+
+
+CV_DELAY = _minutes("CV_DELAY_MINUTES", 180)  # 0 = send right after approval
+WORK_START, WORK_END = _work_hours()  # e.g. WORK_HOURS=10-22
+BAGHDAD = timezone(timedelta(hours=3))
+SCHEDULE_HEAD = "📌 جدول تسليم السي في"
+deliveries = {}  # admin CV message id -> {"u": user, "t": when, "g": gift ids, "f": file id, "cap": admin caption}
+schedule = {"msg": None, "loaded": False, "text": ""}
+schedule_lock = threading.RLock()
+
+
+def delivery_time(now=None):
+    now = now or time.time()
+    if not CV_DELAY:
+        return now
+    at = now + CV_DELAY * 60 * random.uniform(0.85, 1.15)
+    local = datetime.fromtimestamp(at, BAGHDAD)
+    opening = local.replace(hour=WORK_START, minute=0, second=0, microsecond=0)
+    if local.hour < WORK_START:
+        return opening.timestamp() + random.randint(5, 45) * 60
+    if local.hour >= WORK_END:
+        return (opening + timedelta(days=1)).timestamp() + random.randint(5, 45) * 60
+    return at
+
+
+def when_text(at, now=None):
+    """How the buyer is told when the CV arrives (the team's estimate, never an exact minute)."""
+    now = now or time.time()
+    a, n = datetime.fromtimestamp(at, BAGHDAD), datetime.fromtimestamp(now, BAGHDAD)
+    hours = (at - now) / 3600
+    if hours < 0.75:
+        return "خلال وقت قصير"
+    if a.date() == n.date():
+        if n.hour < WORK_START and a.hour < 12:
+            return "اليوم الصبح إن شاء الله"
+        if hours < 1.5:
+            return "خلال ساعة تقريباً"
+        if hours < 2.5:
+            return "خلال ساعتين تقريباً"
+        return f"خلال {round(hours)} ساعات تقريباً" if hours < 10.5 else "اليوم إن شاء الله"
+    if (a.date() - n.date()).days == 1:
+        return "باچر الصبح إن شاء الله" if a.hour < 12 else "باچر إن شاء الله"
+    return "بأقرب وقت إن شاء الله"
+
+
+def clock(at, now=None):
+    """Baghdad time for the admin: «اليوم 3:40 م», «باچر 10:15 ص»."""
+    a, n = datetime.fromtimestamp(at, BAGHDAD), datetime.fromtimestamp(now or time.time(), BAGHDAD)
+    days = (a.date() - n.date()).days
+    day = "اليوم" if days == 0 else "باچر" if days == 1 else a.strftime("%d/%m")
+    return f"{day} {a.hour % 12 or 12}:{a.minute:02d} {'ص' if a.hour < 12 else 'م'}"
+
+
+def load_schedule():
+    """After a restart: read the queue back from the pinned message in the admin chat."""
+    with schedule_lock:
+        if schedule["loaded"] or not ADMIN_CHAT_ID:
+            return
+        r = tg("getChat", chat_id=ADMIN_CHAT_ID)
+        if not r.get("ok"):
+            return  # try again on the next round
+        schedule["loaded"] = True
+        pin = (r.get("result") or {}).get("pinned_message") or {}
+        text = pin.get("text") or ""
+        if not text.startswith(SCHEDULE_HEAD):
+            return
+        schedule["msg"] = pin.get("message_id")
+        m = re.search(r"(\[.*\])\s*$", text, re.S)
+        try:
+            for u, t, k, g in json.loads(m.group(1)) if m else []:
+                deliveries.setdefault(int(k), {"u": int(u), "t": float(t), "g": [int(x) for x in g]})
+        except Exception:
+            log.exception("could not read the delivery schedule")
+        log.info("delivery schedule loaded: %d waiting", len(deliveries))
+
+
+def save_schedule():
+    if not ADMIN_CHAT_ID:
+        return
+    with schedule_lock:
+        load_schedule()  # never overwrite a queue that was not read back yet
+        items = sorted(deliveries.items(), key=lambda kv: kv[1]["t"])
+        state = json.dumps([[v["u"], int(v["t"]), k, v.get("g") or []] for k, v in items], separators=(",", ":"))
+        rows = [f"• {esc(v.get('n') or 'متقدم')} ← {datetime.fromtimestamp(v['t'], BAGHDAD).strftime('%d/%m %H:%M')}"
+                for k, v in items[:20]] + ([f"… و{len(items) - 20} غيرهم"] if len(items) > 20 else [])
+        text = (f"<b>{SCHEDULE_HEAD}</b>\n<i>البوت يحدّث هاي الرسالة وحده ويرجعلها إذا انعاد تشغيله، خليها مثبتة.</i>\n\n"
+                + ("\n".join(rows) if rows else "ماكو سي في بالانتظار ✅") + f"\n\n<code>{esc(state)}</code>")
+        if text == schedule["text"]:
+            return
+        if schedule["msg"]:
+            r = tg("editMessageText", chat_id=ADMIN_CHAT_ID, message_id=schedule["msg"], text=text, parse_mode="HTML")
+            if r.get("ok") or "not modified" in str(r.get("description", "")):
+                schedule["text"] = text
+                return
+        if not items:
+            return
+        r = send(ADMIN_CHAT_ID, text, silent=True)
+        if r.get("ok"):
+            schedule["msg"], schedule["text"] = r["result"]["message_id"], text
+            tg("pinChatMessage", chat_id=ADMIN_CHAT_ID, message_id=schedule["msg"], disable_notification=True)
+
+
+def waiting_delivery(chat_id):
+    return next((v for v in list(deliveries.values()) if v["u"] == chat_id), None)
+
+
+def deliver_cv(mid, job=None, claimed=False):
+    """Sends the final CV, the gifts and the candidates note. Returns True when the CV reached the person."""
+    with schedule_lock:
+        queued = deliveries.pop(mid, None) or {}
+    job = {**queued, **{k: v for k, v in (job or {}).items() if v or k == "cap"}}  # what the admin's message carries wins
+    if not job.get("u"):
+        return False
+    if not claimed:  # take the job on Telegram first: two copies of the server (during a deploy) can't both send it
+        claim = tg("editMessageReplyMarkup", chat_id=ADMIN_CHAT_ID, message_id=mid)
+        if not claim.get("ok") and "not modified" in str(claim.get("description", "")):
+            save_schedule()
+            return False
+    target = job["u"]
+    caption = (f"🎉 <b>السي في مالتك جاهز!</b>\nراجعه فريقنا ودققه، وهسه تگدر تقدّم بيه. بالتوفيق 🤍\n"
+               f"— فريق {COMPANY}")
+    res = (tg("sendDocument", chat_id=target, document=job["f"], caption=caption, parse_mode="HTML")
+           if job.get("f") else {"ok": False})
+    if not res.get("ok"):
+        res = tg("copyMessage", chat_id=target, from_chat_id=ADMIN_CHAT_ID, message_id=mid,
+                 caption=caption, parse_mode="HTML")
+    status = (f"📤 انرسل للشخص ({clock(time.time())})" if res.get("ok")
+              else "⚠️ ما گدرت أدزه (يمكن الشخص حاظر البوت)")
+    gift_ids = sorted(set(job.get("g") or []))
+    if res.get("ok") and gift_ids:
+        send(target, "🎁 <b>وهاي هداياك ويا السي في</b> 👇")
+        g = tg("copyMessages", chat_id=target, from_chat_id=ADMIN_CHAT_ID, message_ids=gift_ids)
+        status += " + الهدايا 🎁" if g.get("ok") else " (الهدايا ما انرسلت)"
+    if res.get("ok"):
+        send(target, f"🤝 هسه السي في مالتك ضمن المرشحين عدنا بـ <b>{COMPANY}</b>، "
+                     "ونرشحك للشركات اللي تطلب حسب مؤهلاتك.\n"
+                     "🎓 وإذا تريد تتجهز أكثر، شوف كورسات المقابلات والمندبة من /start")
+    if job.get("cap") is not None:
+        tg("editMessageCaption", chat_id=ADMIN_CHAT_ID, message_id=mid, caption=f"{job['cap']}\n{status}"[:1024])
+    else:
+        send(ADMIN_CHAT_ID, status, reply_to=mid, silent=True)
+    save_schedule()
+    return bool(res.get("ok"))
+
+
+def deliver_due(now=None):
+    now = now or time.time()
+    for mid in [k for k, v in list(deliveries.items()) if v["t"] <= now]:
+        try:
+            deliver_cv(mid)
+        except Exception:
+            log.exception("delivery failed")
+
+
+def delivery_loop():
+    while True:
+        try:
+            load_schedule()
+            deliver_due()
+        except Exception:
+            log.exception("delivery loop")
+        time.sleep(30)
+
+
+def approve_cv(msg, target, gift_ids, pending):
+    """The admin approved (payment checked): tell the person our team is preparing it, then deliver on time."""
+    mid, caption = msg.get("message_id"), msg.get("caption") or ""
+    name = (pending or {}).get("name") or (re.search(r"👤 (.+)", caption) or [None, None])[1]
+    base = f"{caption}\n\n✅ تمت الموافقة"
+    job = {"u": target, "t": delivery_time(), "g": gift_ids, "f": (msg.get("document") or {}).get("file_id"),
+           "cap": base, "n": name}
+    if job["t"] - time.time() < 60:
+        deliver_cv(mid, job, claimed=True)
+        return
+    with schedule_lock:
+        deliveries[mid] = job
+    head = ("✅ <b>تم تأكيد الدفع، شكراً إلك 🤍</b>" if PAID else
+            "✅ <b>تمت الموافقة على السي في مالتك من قبل فريقنا 🤍</b>")
+    res = send(target, f"{head}\n\n👩‍💼 هسه السي في مالتك عند فريق {COMPANY}: دا نراجع المعلومات والصياغة "
+                       "والتنسيق ونجهز النسخة النهائية.\n\n"
+                       f"⏰ راح يوصلك هنا <b>{when_text(job['t'])}</b>، ويا الهدايا 🎁\n"
+                       "خلي إشعارات البوت مفتوحة 🔔")
+    if not res.get("ok"):  # blocked the bot: nothing to wait for
+        deliveries.pop(mid, None)
+        tg("editMessageCaption", chat_id=ADMIN_CHAT_ID, message_id=mid,
+           caption=f"{base}\n⚠️ ما گدرت أوصله (يمكن الشخص حاظر البوت)"[:1024])
+        return
+    tag_ids = "".join(f":{i}" for i in gift_ids)
+    tg("editMessageCaption", chat_id=ADMIN_CHAT_ID, message_id=mid,
+       caption=f"{base}\n⏰ يوصله تلقائياً: {clock(job['t'])}"[:1024],
+       reply_markup={"inline_keyboard": [[{"text": "⚡ أرسله هسه", "callback_data": f"now:{target}{tag_ids}"[:64]}]]})
+    save_schedule()
 
 
 # ================================================================= job ad
@@ -1895,7 +2105,7 @@ def submit_ad(chat_id, sess):
     send(ADMIN_CHAT_ID, f"📢 <b>إعلان وظيفة جديد للمراجعة</b>\nمن: {user_handle(sess['data'].get('tg_user'), chat_id)}",
          reply_to=pid, inline=[[{"text": "✅ نشر بالقناة", "callback_data": f"adok:{chat_id}"},
                                 {"text": "❌ رفض", "callback_data": f"adno:{chat_id}"}]])
-    send(chat_id, "✅ وصل طلبكم للإدارة.\nراح نتواصل وياكم هنا، ونرشحلكم أنسب المتقدمين 🤍")
+    send(chat_id, f"✅ وصل طلبكم لفريق {COMPANY}.\nراح يتواصل وياكم أحد موظفينا هنا، ونرشحلكم أنسب المتقدمين 🤍")
 
 
 # ================================================================ courses
@@ -1983,7 +2193,7 @@ def start_course_purchase(chat_id, user, course):
                         "<i>رد على هذي الرسالة حتى تبلغه بالسعر. بعد ما يدفع اضغط ✅ وينفتحله الكورس.</i>",
          inline=[[{"text": "✅ افتح الكورس له", "callback_data": f"kc:{chat_id}:{course}"},
                   {"text": "❌ رفض", "callback_data": f"kn:{chat_id}:{course}"}]])
-    send(chat_id, f"✅ وصل طلبك لـ <b>{esc(label)}</b>.\nالإدارة راح تبلغك هنا بالسعر وطريقة الدفع، "
+    send(chat_id, f"✅ وصل طلبك لـ <b>{esc(label)}</b>.\nأحد موظفينا راح يبلغك هنا بالسعر وطريقة الدفع، "
                   "وأول ما تدفع ينفتحلك الكورس بالبوت 🤍")
 
 
@@ -2010,7 +2220,7 @@ def handle_course_payment(chat_id, sess, msg):
         timer = threading.Timer(minutes * 60, remind_admin, args=(chat_id, minutes))
         timer.daemon = True
         timer.start()
-    send(chat_id, "✅ <b>استلمنا صورة الدفع، شكراً إلك 🤍</b>\n⏳ دا نتأكد من وصول المبلغ (التأكد يدوي)، "
+    send(chat_id, "✅ <b>استلمنا صورة الدفع، شكراً إلك 🤍</b>\n⏳ هسه موظف من فريقنا دا يتأكد من وصول المبلغ، "
                   f"وأول ما يتأكد ينفتحلك الكورس هنا {PAYMENT_WAIT} 🎓")
 
 
@@ -2153,26 +2363,21 @@ def handle_callback(cq):
     if action in ("ok", "no"):
         caption = msg.get("caption") or ""
         drop_buttons()  # first, so a double tap can't send twice
-        pending_payments.pop(target, None)
+        pending = pending_payments.pop(target, None)
         if action == "ok":
-            res = tg("sendDocument", chat_id=target, document=(msg.get("document") or {}).get("file_id"),
-                     caption=f"🎉 السي في مالتك جاهز! بالتوفيق بالتقديم 🤍\n— {COMPANY}")
-            status = "✅ انرسل للشخص" if res.get("ok") else "⚠️ ما گدرت أدزه (يمكن الشخص حاظر البوت)"
             gift_ids = sorted(int(x) for x in parts[2:] if x.isdigit()) or gifts_by_user.get(target, [])
-            if res.get("ok") and gift_ids:
-                send(target, "🎁 <b>وهاي هداياك ويا السي في</b> 👇")
-                g = tg("copyMessages", chat_id=target, from_chat_id=chat_id, message_ids=sorted(gift_ids))
-                status += " + الهدايا 🎁" if g.get("ok") else " (الهدايا ما انرسلت)"
-            if res.get("ok"):
-                send(target, f"🤝 هسه السي في مالتك ضمن المرشحين عدنا بـ <b>{COMPANY}</b>، "
-                             "ونرشحك للشركات اللي تطلب حسب مؤهلاتك.\n"
-                             "🎓 وإذا تريد تتجهز أكثر، شوف كورسات المقابلات والمندبة من /start")
-        else:
-            text = ("❌ ما گدرنا نتأكد من وصول الدفع.\nإذا حوّلت المبلغ، اكتب /start واختار التواصل مع الإدارة."
-                    if PAID else "عذراً، نحتاج نراجع معلوماتك 🙏 تگدر تعيد التقديم من /start أو راح نتواصل وياك.")
-            send(target, text)
-            status = "❌ مرفوض"
-        tg("editMessageCaption", chat_id=chat_id, message_id=mid, caption=f"{caption}\n\n{status}"[:1024])
+            approve_cv(msg, target, gift_ids, pending)
+            return
+        text = ("❌ ما گدرنا نتأكد من وصول الدفع.\nإذا حوّلت المبلغ، اكتب /start واختار 💬 تواصل ويانا."
+                if PAID else "عذراً، نحتاج نراجع معلوماتك 🙏 تگدر تعيد التقديم من /start أو راح يتواصل وياك أحد موظفينا.")
+        send(target, text)
+        tg("editMessageCaption", chat_id=chat_id, message_id=mid, caption=f"{caption}\n\n❌ مرفوض"[:1024])
+    elif action == "now":  # the admin wants a scheduled CV sent right away
+        drop_buttons()
+        gift_ids = [int(x) for x in parts[2:] if x.isdigit()]
+        job = {"u": target, "g": gift_ids, "f": (msg.get("document") or {}).get("file_id"),
+               "cap": (msg.get("caption") or "").split("\n⏰")[0]}
+        deliver_cv(mid, job, claimed=True)
     elif action in ("kc", "kn"):
         course = parts[2] if len(parts) > 2 else ""
         drop_buttons()
@@ -2183,7 +2388,7 @@ def handle_callback(cq):
             ok = all(unlock_course(target, k) for k in keys) if keys else False
             status = "✅ انفتح الكورس للشخص" if ok else "⚠️ ما گدرت أدزله (يمكن حاظر البوت)"
         else:
-            send(target, "❌ ما گدرنا نتأكد من الدفع للكورس.\nإذا حوّلت المبلغ، اكتب /start واختار التواصل ويانا.")
+            send(target, "❌ ما گدرنا نتأكد من الدفع للكورس.\nإذا حوّلت المبلغ، اكتب /start واختار 💬 تواصل ويانا.")
             status = "❌ مرفوض"
         if msg.get("caption") is not None:
             tg("editMessageCaption", chat_id=chat_id, message_id=mid, caption=f"{base}\n\n{status}"[:1024])
@@ -2193,7 +2398,7 @@ def handle_callback(cq):
         original = (msg.get("text") or "").split("\n\n")[0]
         drop_buttons()
         if action == "adno":
-            send(target, "عذراً، إعلانك ما انقبل للنشر 🙏 للاستفسار اكتب /start واختار التواصل مع الإدارة.")
+            send(target, "عذراً، إعلانك ما انقبل للنشر 🙏 للاستفسار اكتب /start واختار 💬 تواصل ويانا.")
             tg("editMessageText", chat_id=chat_id, message_id=mid, text=f"{original}\n\n❌ مرفوض")
             return
         preview_id = (msg.get("reply_to_message") or {}).get("message_id")
@@ -2218,7 +2423,7 @@ def handle_admin_reply(msg):
         return False
     target = int(found.group(1))
     if msg.get("text"):
-        res = send(target, f"📩 <b>رد الإدارة:</b>\n\n{esc(msg['text'])}")
+        res = send(target, f"📩 <b>رد فريق {COMPANY}:</b>\n\n{esc(msg['text'])}")
     else:
         res = tg("copyMessage", chat_id=target, from_chat_id=msg["chat"]["id"], message_id=msg["message_id"])
     send(msg["chat"]["id"], "✅ انرسل الرد" if res.get("ok") else "⚠️ ما انرسل (يمكن الشخص حاظر البوت)",
@@ -2279,13 +2484,16 @@ def handle_update(upd):
             handle_payment_proof(chat_id, None, msg)  # e.g. the server restarted while they were paying
         elif chat_id in pending_payments and not cmd:
             mins = int((time.time() - pending_payments[chat_id]["t"]) / 60)
-            send(chat_id, f"⏳ طلبك قيد التحقق من الدفع (من {mins} دقيقة).\n"
-                          "أول ما يتأكد يوصلك السي في والهدايا هنا 🤍")
+            send(chat_id, f"⏳ موظفنا دا يتأكد من الدفع هسه (من {mins} دقيقة).\n"
+                          "بعدها فريقنا يكمل تجهيز السي في مالتك، ويوصلك هنا ويا الهدايا 🤍")
+        elif not cmd and waiting_delivery(chat_id):
+            send(chat_id, "⏳ السي في مالتك عند فريقنا هسه، دا نجهز النسخة النهائية.\n"
+                          f"راح يوصلك هنا {when_text(waiting_delivery(chat_id)['t'])} ويا الهدايا 🤍")
         elif ai.enabled() and (len(clean(text)) >= 40 or msg.get("voice") or msg.get("audio")):
             # they just wrote (or said) their details without pressing anything: start the CV right away
             sess = new_session(chat_id, "cv", "talk", msg.get("from") or {})
             sess["talk"], sess["rounds"] = [], 0
-            send(chat_id, "📝 تمام، راح أسويلك سيرة ذاتية من معلوماتك 🤖")
+            send(chat_id, "📝 تمام، راح نسويلك سيرة ذاتية من معلوماتك")
             handle_cv_answer(chat_id, sess, msg)
         else:
             show_menu(chat_id)
@@ -2299,7 +2507,7 @@ def handle_update(upd):
         res = forward_to_admin(chat_id, msg, f"💬 <b>رسالة من</b> {user_handle(sess['data'].get('tg_user'), chat_id)}\n"
                                              "<i>(رد على هذي الرسالة حتى يوصل ردك للشخص)</i>")
         sessions.pop(chat_id, None)
-        send(chat_id, "✅ وصلت رسالتك للإدارة، وراح نرد عليك هنا قريباً 🤍" if res.get("ok")
+        send(chat_id, f"✅ وصلت رسالتك لفريق {COMPANY}، وراح يرد عليك أحد موظفينا هنا قريباً 🤍" if res.get("ok")
              else "صار خطأ بالإرسال 😔 جرّب مرة ثانية من /start")
 
 
@@ -2452,6 +2660,9 @@ def self_test():
                        for n in range(1, len(course_lessons(k)) + 1)) for k in COURSES}
         out.append("course videos: " + ", ".join(f"{k} {v}/{len(course_lessons(k))}" for k, v in vids.items())
                    + f" | course price: {COURSE_PRICE or 'not set (admin request)'}")
+        out.append(f"cv delivery: {'about ' + str(CV_DELAY) + ' min after approval' if CV_DELAY else 'right after approval'}"
+                   f", working hours {WORK_START}-{WORK_END} Baghdad, waiting {len(deliveries)}"
+                   f", schedule {'pinned' if schedule['msg'] else 'loaded' if schedule['loaded'] else 'not read yet'}")
         ats, cover = extras.build_ats_cv(latinize(d)), extras.build_cover_letter(latinize(d), None)
         out.append(f"gift files: ATS CV {'OK' if ats[:4] == b'%PDF' else 'BAD'}, cover letter {'OK' if cover[:4] == b'%PDF' else 'BAD'}")
         if used_ai:
@@ -2566,7 +2777,7 @@ def webhook():
 SHORT_DESC = f"{COMPANY} 🩺 تابعين لـ{PARTNER} | سي في احترافي، ترشيح للشركات، وكورسات مقابلات ومندبة"
 LONG_DESC = (f"🩺 {COMPANY} | {COMPANY_EN}\n"
              f"شركة متخصصة بالتوظيف بالقطاع الطبي والمبيعات، تابعة لـ{PARTNER} 📢\n\n"
-             "📝 نصمملك سيرة ذاتية CV احترافية بالإنگليزي بالذكاء الاصطناعي\n"
+             "📝 نصمملك سيرة ذاتية CV احترافية بالإنگليزي، يراجعها ويدققها فريقنا\n"
              "🤝 نرشّح السي في مالتك للشركات اللي تطلب مندوبين وموظفين وخدمات\n"
              "🎓 كورسات بالمقابلات الوظيفية والمندبة الطبية\n"
              "🏢 وللشركات: نوفرلكم مندوبين وموظفين\n\n"
@@ -2590,6 +2801,9 @@ def setup_profile():
     current = (tg("getMyShortDescription").get("result") or {}).get("short_description", "")
     if current == SHORT_DESC:
         stats["profile"] = "set earlier"
+        if (tg("getMyDescription").get("result") or {}).get("description", LONG_DESC) != LONG_DESC:
+            tg("setMyDescription", description=LONG_DESC)  # only the text changed: keep the picture
+            stats["profile"] = "description updated"
         return
     tg("removeMyProfilePhoto")  # drop the previous picture, then put the current one
     res = set_profile_photo()
@@ -2672,6 +2886,7 @@ def start_background():
         return
     threading.Thread(target=register_webhook, daemon=True, name="register-webhook").start()
     threading.Thread(target=watchdog, daemon=True, name="watchdog").start()
+    threading.Thread(target=delivery_loop, daemon=True, name="deliveries").start()
     if PUBLIC_URL and os.environ.get("KEEP_AWAKE", "on").strip().lower() not in ("0", "off", "no", "false"):
         threading.Thread(target=keep_awake, daemon=True, name="keep-awake").start()
 
