@@ -1,5 +1,6 @@
-# Free outside visitor for the Render free plan:
-# - every 5 minutes it opens the bot's page so the server never falls asleep
+# Free outside visitor for the Render free plan (the server sleeps after 15 minutes without visitors):
+# - GitHub starts this every 5 minutes at best (often every 10-20), so each run visits 5 times, 4 minutes
+#   apart (~16 minutes), and the runs overlap: no gap long enough for the server to fall asleep
 # - after every update pushed to main, it asks the bot to deploy the new version (/sync)
 name: keep bot awake
 on:
@@ -11,12 +12,17 @@ on:
 jobs:
   visit:
     runs-on: ubuntu-latest
-    timeout-minutes: 4
+    timeout-minutes: 20
     steps:
-      - name: Visit the bot
-        run: curl -sS -m 120 -o /dev/null -w "%{http_code}\n" https://cv-bot-o61r.onrender.com/ || true
       - name: Deploy the new version after a push
         if: github.event_name == 'push'
         run: |
+          curl -sS -m 120 -o /dev/null https://cv-bot-o61r.onrender.com/ || true
           sleep 15
           curl -sS -m 120 "https://cv-bot-o61r.onrender.com/sync?run=${{ github.run_id }}" || true
+      - name: Visit the bot every 4 minutes
+        run: |
+          for i in 1 2 3 4 5; do
+            curl -sS -m 120 -o /dev/null -w "visit $i: %{http_code}\n" https://cv-bot-o61r.onrender.com/ || true
+            [ "$i" -lt 5 ] && sleep 240
+          done

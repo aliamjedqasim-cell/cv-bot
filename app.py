@@ -1507,6 +1507,11 @@ def health():
     return "CV bot is running ✅"
 
 
+@app.get("/robots.txt")
+def robots():
+    return "User-agent: *\nAllow: /\n", 200, {"Content-Type": "text/plain"}
+
+
 @app.get("/health")
 def health_details():
     """Public self-check (no secrets shown): version, token, webhook, settings. Re-links the webhook if needed."""
