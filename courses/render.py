@@ -8,9 +8,9 @@ import sys
 import tempfile
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFilter, ImageFont
+from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 
-from lesson import ROOT, lessons, load, sentences
+from lesson import ROOT, audio_key, lessons, load, sentences
 
 W, H, FPS, RATE = 720, 1280, 30, 24000
 NAVY, NAVY2 = (8, 24, 50), (3, 10, 26)
@@ -19,6 +19,9 @@ FONTS = ROOT / "fonts"
 LOGO = ROOT.parent / "assets" / "avatar.jpg"
 AR_DIGITS = str.maketrans("0123456789", "٠١٢٣٤٥٦٧٨٩")
 PAUSE, SEG_PAUSE, ANIM = 0.28, 0.55, 0.4
+BLUE, AMBER = (96, 150, 255), (255, 196, 84)
+PEOPLE = {"interviewer": "مسؤولة التوظيف", "candidate": "المتقدم", "coach": "ملاحظة المدرب"}
+TURN_PAUSE = 0.3  # a little more silence when the other person starts talking
 
 
 def font(weight, size):
@@ -165,14 +168,15 @@ def frame(base, lesson, seg, revealed, active, sub, progress, anim=None, seg_no=
         lg = logo(260)
         lg.putalpha(lg.getchannel("A").point(lambda v: int(v * t)))
         layer.alpha_composite(lg, ((W - 260) // 2, 330))
-        d.text((W / 2, 650), "نراك في الدرس القادم", font=font("ExtraBold", 54), fill=WHITE + (int(255 * t),),
+        bye = "بالتوفيق في خطوتك القادمة" if lesson["number"] >= lesson["of"] else "نراك في الدرس القادم"
+        d.text((W / 2, 650), bye, font=font("ExtraBold", 50 if len(bye) > 22 else 54), fill=WHITE + (int(255 * t),),
                anchor="ma", direction="rtl")
         d.text((W / 2, 730), "مسار للتوظيف الطبي", font=font("Bold", 34), fill=MINT + (int(255 * t),), anchor="ma",
                direction="rtl")
     else:
         th = ease(anim[1]) if anim and anim[0] == "heading" else 1
         cx, cy = W - 40 - 34, 196 + 34
-        if kind == "points":
+        if kind in ("points", "dialogue"):
             d.ellipse((cx - 34, cy - 34, cx + 34, cy + 34), fill=TEAL + (int(255 * th),))
             d.text((cx, cy + 2), ar(seg_no), font=font("ExtraBold", 38), fill=(3, 10, 26, int(255 * th)), anchor="mm")
             right = W - 40 - 84
@@ -186,6 +190,11 @@ def frame(base, lesson, seg, revealed, active, sub, progress, anim=None, seg_no=
         y = 196 + len(hl) * 66 + 18
         d.rounded_rectangle((right - 90 * th, y, right, y + 6), 3, fill=TEAL + (255,))
         y += 46
+        if kind == "dialogue":
+            img = Image.alpha_composite(img, layer)
+            layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+            chat(layer, lesson, seg, revealed, active, anim, top=max(CHAT_TOP, int(y) - 20))
+            return subtitle_box(Image.alpha_composite(img, layer), "", progress)
         items = seg.get("points") or [{"text": x} for x in seg.get("items") or []]
         for i, item in enumerate(items[:revealed]):
             alpha, dy = 1, 0
@@ -198,6 +207,132 @@ def frame(base, lesson, seg, revealed, active, sub, progress, anim=None, seg_no=
             y += hgt + 22
     img = Image.alpha_composite(img, layer)
     return subtitle_box(img, sub, progress)
+
+
+# ---------------------------------------------------------------- dialogue
+# A mock interview looks like a chat: the interviewer on the left, the candidate on the right, the coach's
+# notes as amber cards. The newest message slides up from the bottom; older ones fade out at the top.
+CHAT_TOP, CHAT_BOTTOM = 330, 1196
+
+
+def bubble_layout(d, line, label):
+    who = line["who"]
+    f = font("Medium", 30 if who == "coach" else 31)
+    max_w = W - 80 - 64 if who == "coach" else 430
+    rows = wrap(d, line["say"], f, max_w)
+    lh = 45
+    text_w = max(d.textlength(r, font=f, direction="rtl") for r in rows) if rows else 0
+    if who == "coach":
+        return {"f": f, "rows": rows, "lh": lh, "w": W - 80, "h": 52 + lh * len(rows) + 26, "label": True}
+    return {"f": f, "rows": rows, "lh": lh, "w": int(min(max_w, text_w) + 48), "h": lh * len(rows) + 30 + (34 if label else 0),
+            "label": label}
+
+
+def avatar(d, cx, cy, color, letter, alpha):
+    d.ellipse((cx - 28, cy - 28, cx + 28, cy + 28), fill=color + (alpha,))
+    d.text((cx, cy + 3), letter, font=font("ExtraBold", 28), fill=(3, 10, 26, alpha), anchor="mm", direction="rtl")
+
+
+def draw_bubble(d, top, line, lay, names, active, alpha):
+    who, a = line["who"], int(255 * alpha)
+    f, rows, lh = lay["f"], lay["rows"], lay["lh"]
+    if who == "coach":
+        x0, x1, bottom = 40, W - 40, top + lay["h"]
+        d.rounded_rectangle((x0, top, x1, bottom), 22, fill=(255, 196, 84, int((44 if active else 22) * alpha)),
+                            outline=AMBER + (a if active else int(a * 0.55),), width=3 if active else 2)
+        bx, by = x1 - 34, top + 30  # a small light bulb
+        d.ellipse((bx - 12, by - 14, bx + 12, by + 10), fill=AMBER + (a,))
+        d.rectangle((bx - 6, by + 9, bx + 6, by + 15), fill=AMBER + (a,))
+        d.text((x1 - 58, top + 14), names["coach"], font=font("Bold", 26), fill=AMBER + (a,), anchor="ra", direction="rtl")
+        for i, r in enumerate(rows):
+            d.text((x1 - 30, top + 52 + i * lh), r, font=f, fill=WHITE + (a,), anchor="ra", direction="rtl")
+        return
+    right_side = who == "candidate"
+    color = TEAL if right_side else BLUE
+    name = names[who]
+    y = top
+    if lay["label"]:
+        lf = font("Medium", 23)
+        if right_side:
+            d.text((W - 112, y), name, font=lf, fill=MINT + (a,), anchor="ra", direction="rtl")
+        else:
+            d.text((112, y), name, font=lf, fill=(170, 196, 255, a), anchor="la", direction="rtl")
+        y += 34
+    bw, bh = lay["w"], lay["h"] - (34 if lay["label"] else 0)
+    x0, x1 = (W - 112 - bw, W - 112) if right_side else (112, 112 + bw)
+    fill = color + (int((58 if active else 30) * alpha),)
+    edge = color + (a if active else int(a * 0.45),)
+    d.rounded_rectangle((x0, y, x1, y + bh), 24, fill=fill, outline=edge, width=3 if active else 1)
+    for i, r in enumerate(rows):
+        d.text((x1 - 24, y + 15 + i * lh), r, font=f, fill=WHITE + (a,), anchor="ra", direction="rtl")
+    if lay["label"]:
+        letter = (name.strip() or "؟")[0]
+        avatar(d, W - 40 - 28 if right_side else 40 + 28, y + 26, color, letter, a)
+
+
+def scene(d, names, speaking, alpha, caption):
+    """Before the chat fills the screen: the two people facing each other."""
+    a = int(255 * alpha)
+    for who, cx, color in (("interviewer", 205, BLUE), ("candidate", W - 205, TEAL)):
+        cy = 470
+        if who == speaking:
+            d.ellipse((cx - 84, cy - 84, cx + 84, cy + 84), outline=color + (a,), width=4)
+        d.ellipse((cx - 70, cy - 70, cx + 70, cy + 70), fill=color + (int(a * (1 if who == speaking else 0.75)),))
+        d.text((cx, cy + 6), (names[who].strip() or "؟")[0], font=font("ExtraBold", 66), fill=(3, 10, 26, a),
+               anchor="mm", direction="rtl")
+        d.text((cx, cy + 104), names[who].split("،")[0], font=font("Bold", 30), fill=WHITE + (a,), anchor="ma",
+               direction="rtl")
+        if "،" in names[who]:
+            d.text((cx, cy + 142), names[who].split("،", 1)[1].strip(), font=font("Regular", 23), fill=GREY + (a,),
+                   anchor="ma", direction="rtl")
+    for k in range(5):  # a small "talking" link between them
+        x = W / 2 - 48 + k * 24
+        d.ellipse((x - 5, 465, x + 5, 475), fill=MINT + (int(a * (0.35 + 0.13 * k if speaking == "candidate" else 0.87 - 0.13 * k)),))
+    if caption:
+        d.text((W / 2, 360), caption, font=font("Medium", 26), fill=MINT + (a,), anchor="ma", direction="rtl")
+
+
+_mask = {}
+
+
+def chat_mask(top):
+    """Fades the chat out at the top and clips it at the bottom."""
+    if top not in _mask:
+        col = Image.new("L", (1, H), 0)
+        for yy in range(H):
+            if top - 30 <= yy <= CHAT_BOTTOM + 8:
+                col.putpixel((0, yy), 255 if yy >= top + 70 else int(255 * (yy - top + 30) / 100))
+        _mask[top] = col.resize((W, H))
+    return _mask[top]
+
+
+def chat(layer, lesson, seg, revealed, active, anim, top=CHAT_TOP):
+    d = ImageDraw.Draw(layer)
+    names = {**PEOPLE, **(lesson.get("people") or {})}
+    lines = seg["lines"][:revealed]
+    lays = [bubble_layout(d, ln, i == 0 or lines[i - 1]["who"] != ln["who"]) for i, ln in enumerate(lines)]
+    t = ease(anim[1]) if anim and anim[0] == "bubble" else 1
+    gap = 20
+    push = (1 - t) * (lays[-1]["h"] + gap) if lays else 0
+    stack_top = CHAT_BOTTOM + push - sum(x["h"] + gap for x in lays)
+    scene_alpha = max(0.0, min(1.0, (stack_top - 650) / 130))
+    if scene_alpha > 0:
+        speaking = lines[active]["who"] if 0 <= active < len(lines) else ""
+        scene(d, names, speaking, scene_alpha, lesson.get("scene") or "")
+    stack = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    sd = ImageDraw.Draw(stack)
+    y = CHAT_BOTTOM + push
+    for i in range(len(lines) - 1, -1, -1):
+        y -= lays[i]["h"]
+        if y + lays[i]["h"] < top - 40:
+            break
+        newest = i == len(lines) - 1
+        alpha = t if newest else (1 if i == active else 0.72)
+        draw_bubble(sd, int(y), lines[i], lays[i], names, i == active, alpha)
+        y -= gap
+    mask = chat_mask(top)
+    stack.putalpha(ImageChops.multiply(stack.getchannel("A"), mask))
+    layer.alpha_composite(stack)
 
 
 # ---------------------------------------------------------------- timeline
@@ -265,8 +400,19 @@ def build(stem):
 
     seg_no = 0
     for si, seg in enumerate(segs):
-        if seg["type"] == "points":
+        if seg["type"] in ("points", "dialogue"):
             seg_no += 1
+        if seg["type"] == "dialogue":
+            events.append(("anim", (si, 0, -1, "heading", seg_no), ANIM, silence(ANIM)))
+            for li, line in enumerate(seg["lines"]):
+                if li and seg["lines"][li - 1]["who"] != line["who"]:
+                    events.append(("hold", (si, li, -1, "", seg_no), TURN_PAUSE, silence(TURN_PAUSE)))
+                events.append(("anim", (si, li + 1, li, "bubble", seg_no), 0.36, silence(0.36)))
+                for s in sentences(line["say"]):
+                    data = pcm(audio_dir / manifest[audio_key(line["who"], s)]) + silence(PAUSE)
+                    events.append(("hold", (si, li + 1, li, "", seg_no), len(data) / (2 * RATE), data))
+            events.append(("hold", (si, len(seg["lines"]), -1, "", seg_no), SEG_PAUSE + 0.4, silence(SEG_PAUSE + 0.4)))
+            continue
         if seg["type"] in ("title", "outro"):
             events.append(("anim", (si, 0, -1, "title" if seg["type"] == "title" else "outro", seg_no), 0.7, silence(0.7)))
             for s in sentences(seg.get("say")):
@@ -299,7 +445,7 @@ def build(stem):
         if kind == "anim":
             steps = max(2, int(sec * FPS / 2))
             for k in range(steps):
-                img = frame(base, lesson, seg, revealed, active if what == "point" else -1,
+                img = frame(base, lesson, seg, revealed, active if what in ("point", "bubble") else -1,
                             "" if what in ("title", "outro") else last_sub if seg["type"] == "summary" else "",
                             (t + sec * k / steps) / total, (what, (k + 1) / steps), seg_no)
                 path = tmp / f"{n:05d}.png"
