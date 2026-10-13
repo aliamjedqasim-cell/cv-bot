@@ -109,19 +109,37 @@ MULTI = {  # prefix -> (step, options, selection key, extras key, label when not
     "l": ("other_langs", OTHER_LANGS, "_langs_sel", "langs_extra", "⏭️ لا، بس هذني"),
 }
 
+COMPANY = "مسار للتوظيف الطبي"
+COMPANY_EN = "Masar Medical Careers"
+PARTNER = env("PARTNER_NAME", "قناة مصطفى أمير")  # the channel we belong to (can be changed on Render)
+BOT_NAME = "مسار للتوظيف الطبي | Masar"
+
 MENU = [
-    [{"text": "📝 إنشاء سيرة ذاتية CV", "callback_data": "m:cv"}],
-    [{"text": "📢 نشر إعلان وظيفة", "callback_data": "m:ad"}],
-    [{"text": "💬 التواصل مع الإدارة", "callback_data": "m:contact"}],
+    [{"text": "📝 سوّي سيرتك الذاتية CV", "callback_data": "m:cv"}],
+    [{"text": "🎓 كورسات المقابلات والمندبة", "callback_data": "m:courses"}],
+    [{"text": "🏢 للشركات: اطلب مندوبين أو موظفين", "callback_data": "m:ad"}],
+    [{"text": "💬 تواصل ويانا", "callback_data": "m:contact"}],
 ]
 WELCOME = (
-    "أهلاً وسهلاً 👋\n\n"
-    "هذا البوت يسويلك <b>سيرة ذاتية احترافية بالإنگليزي</b> للوظائف بالقطاع الطبي والمبيعات، "
-    "<b>بالذكاء الاصطناعي</b> 🤖: احچي عن نفسك بالعربي عادي، أو دز بصمة صوت 🎤، وهو يرتب كلشي.\n\n"
-    "وتگدر تنشر إعلان وظيفة، أو تتواصل ويا الإدارة.\n\n"
+    f"أهلاً وسهلاً بيك بـ <b>{COMPANY}</b> 🩺\n"
+    f"شركة متخصصة بالتوظيف بالقطاع الطبي والمبيعات، تابعة لـ <b>{PARTNER}</b> 📢\n\n"
+    "<b>شنو نقدّملك:</b>\n"
+    "📝 <b>نصمملك سيرة ذاتية CV احترافية بالإنگليزي</b> بالذكاء الاصطناعي 🤖: "
+    "احچي عن نفسك بالعربي، أو دز بصمة صوت 🎤\n"
+    "🤝 <b>نرشّح السي في مالتك</b> للشركات اللي تطلب مندوبين وموظفين وخدمات\n"
+    "🎓 <b>كورسات</b> بالمقابلات الوظيفية والمندبة الطبية\n"
+    "🏢 وللشركات: <b>نوفرلكم مندوبين وموظفين</b>\n\n"
     "اختار شنو تحتاج 👇\n\n"
     "🔒 <i>معلوماتك تُستخدم فقط لإعداد سيرتك الذاتية وترشيحك لفرص عمل مناسبة، وما تنشر بشكل عام.</i>"
 )
+COURSES_TEXT = (
+    f"🎓 <b>كورسات {COMPANY}</b>\n\n"
+    "كورسات عملية تجهزك لسوق العمل:\n\n"
+    "🎤 <b>المقابلات الوظيفية</b>: شلون تقدّم نفسك وتجاوب على أسئلة الشركات بثقة\n"
+    "💼 <b>المندبة الطبية والمبيعات</b>: زيارات الأطباء والصيدليات، عرض المنتج، والإقناع\n\n"
+    "سجّل اهتمامك، والإدارة تتواصل وياك بالمواعيد والتفاصيل 👇"
+)
+COURSE_CHOICES = [("int", "🎤 المقابلات الوظيفية"), ("rep", "💼 المندبة الطبية والمبيعات"), ("all", "📚 الاثنين")]
 
 QUESTIONS = {  # step -> (question, optional?)
     "form": ("دز معلوماتك برسالة وحدة 👆", False),
@@ -160,14 +178,16 @@ QUESTIONS = {  # step -> (question, optional?)
                 "إذا ما عندك اضغط تخطي", True),
     "photo": ("دز صورة شخصية رسمية واضحة 📸، أو اضغط تخطي", True),
     # job ad
-    "ad_company": ("📢 <b>نشر إعلان وظيفة</b>\n\nاسم الشركة أو الجهة", False),
+    "ad_company": ("🏢 <b>للشركات: طلب مندوبين أو موظفين</b>\n\n"
+                   "تحتاجون مندوبين أو موظفين أو خدمات؟ اكتبولنا التفاصيل، ونرشحلكم أنسب المتقدمين من عدنا، "
+                   "وننشر إعلانكم إذا تحبون ✅\n\nاسم الشركة أو الجهة", False),
     "ad_title": ("المسمى الوظيفي\nمثال: مندوب مبيعات طبي", False),
     "ad_city": ("مكان العمل (المدينة أو المنطقة)", False),
     "ad_req": ("المؤهلات والخبرة المطلوبة", False),
     "ad_resp": ("المهام الرئيسية للوظيفة", False),
     "ad_contact": ("طريقة التقديم أو التواصل\nمثال: رقم واتساب، إيميل، أو معرف تيليجرام", False),
     # contact
-    "contact_msg": ("💬 اكتب رسالتك للإدارة هنا، وراح يردون عليك بهذا البوت", False),
+    "contact_msg": (f"💬 اكتب رسالتك لإدارة {COMPANY} هنا، وراح نرد عليك بهذا البوت", False),
 }
 EDIT_FIELDS = [  # (label, group)
     ("الاسم", "name"), ("الوظيفة", "job_title"), ("الهاتف", "phone"), ("الإيميل", "email"),
@@ -1440,8 +1460,8 @@ def payment_message():
     name = f"الاسم: <b>{esc(QI_CARD_NAME)}</b>\n" if QI_CARD_NAME else ""
     return (
         "شكراً لإكمال معلوماتك 🤍\n\n"
-        "خدمتنا تشمل إعداد <b>سيرة ذاتية احترافية بصيغة PDF</b>، مع إدراجك ضمن المرشحين للفرص الوظيفية "
-        "المناسبة حسب مؤهلاتك ومتطلبات الشركات.\n\n"
+        f"خدمة <b>{COMPANY}</b> تشمل إعداد <b>سيرة ذاتية احترافية بصيغة PDF</b>، مع ترشيحك للشركات "
+        "اللي تطلب مندوبين وموظفين حسب مؤهلاتك ومتطلباتها.\n\n"
         f"💰 تكلفة الخدمة: <b>{PRICE_IQD:,} دينار عراقي</b>\n\n"
         f"💳 حوّل على بطاقة <b>Qi Card</b>:\n{name}رقم البطاقة: <code>{esc(QI_CARD_NUMBER)}</code>\n\n"
         "📸 بعدها دز <b>صورة تأكيد الدفع</b> هنا.\n"
@@ -1569,7 +1589,7 @@ def submit_ad(chat_id, sess):
     send(ADMIN_CHAT_ID, f"📢 <b>إعلان وظيفة جديد للمراجعة</b>\nمن: {user_handle(sess['data'].get('tg_user'), chat_id)}",
          reply_to=pid, inline=[[{"text": "✅ نشر بالقناة", "callback_data": f"adok:{chat_id}"},
                                 {"text": "❌ رفض", "callback_data": f"adno:{chat_id}"}]])
-    send(chat_id, "✅ وصل إعلانك للإدارة.\nراح نبلغك هنا بعد المراجعة 🤍")
+    send(chat_id, "✅ وصل طلبكم للإدارة.\nراح نتواصل وياكم هنا، ونرشحلكم أنسب المتقدمين 🤍")
 
 
 # ============================================================ callbacks
@@ -1601,6 +1621,9 @@ def handle_callback(cq):
                 ask(chat_id, sess["step"])
         elif data == "m:cv":
             start_cv(chat_id, user)
+        elif data == "m:courses":
+            send(chat_id, COURSES_TEXT, inline=[[{"text": "✋ سجّلني بالكورسات", "callback_data": "k:join"}],
+                                                [{"text": "↩️ القائمة", "callback_data": "k:menu"}]])
         elif data == "m:ad":
             new_session(chat_id, "ad", "ad_company", user)
             ask(chat_id, "ad_company")
@@ -1610,6 +1633,23 @@ def handle_callback(cq):
             else:
                 new_session(chat_id, "contact", "contact_msg", user)
                 ask(chat_id, "contact_msg")
+        return
+
+    # ---- courses (no session needed)
+    if data.startswith("k:"):
+        drop_buttons()
+        if data == "k:menu":
+            show_menu(chat_id)
+        elif data == "k:join":
+            send(chat_id, "أي كورس يهمك؟ 👇", inline=[[{"text": label, "callback_data": f"k:{key}"}]
+                                                     for key, label in COURSE_CHOICES])
+        else:
+            label = dict(COURSE_CHOICES).get(data[2:], "كورس")
+            if ADMIN_CHAT_ID:
+                send(ADMIN_CHAT_ID, f"🎓 <b>طلب تسجيل بالكورسات</b>\n👤 {user_handle(user, chat_id)}\n"
+                                    f"📚 الكورس: {esc(label)}\n\n<i>(رد على هذي الرسالة حتى يوصل ردك للشخص)</i>")
+            send(chat_id, f"✅ سجّلنا اهتمامك بـ <b>{esc(label)}</b>.\n"
+                          "الإدارة راح تتواصل وياك هنا بالمواعيد والتفاصيل قريباً 🤍")
         return
 
     # ---- applicant buttons (need a live session)
@@ -2047,13 +2087,14 @@ def webhook():
     return "ok"
 
 
-SHORT_DESC = "سيرة ذاتية احترافية بالإنگليزي للقطاع الطبي والمبيعات بالذكاء الاصطناعي 🤖 احچي بالعربي أو دز بصمة صوت 🎤"
-LONG_DESC = ("🩺 Medical CV\n\n"
-             "يسويلك سيرة ذاتية احترافية بالإنگليزي للوظائف الطبية والمبيعات خلال دقايق، بالذكاء الاصطناعي 🤖\n\n"
-             "✍️ احچي عن نفسك بالعربي عادي، أو دز بصمة صوت 🎤، أو السي في القديم مالتك\n"
-             "📄 تستلم السي في PDF جاهز بتصميم احترافي\n"
-             "💼 ونرشحك لفرص عمل مناسبة بالشركات\n\n"
-             "اضغط Start 👇")
+SHORT_DESC = f"{COMPANY} 🩺 تابعين لـ{PARTNER} | سي في احترافي، ترشيح للشركات، وكورسات مقابلات ومندبة"
+LONG_DESC = (f"🩺 {COMPANY} | {COMPANY_EN}\n"
+             f"شركة متخصصة بالتوظيف بالقطاع الطبي والمبيعات، تابعة لـ{PARTNER} 📢\n\n"
+             "📝 نصمملك سيرة ذاتية CV احترافية بالإنگليزي بالذكاء الاصطناعي\n"
+             "🤝 نرشّح السي في مالتك للشركات اللي تطلب مندوبين وموظفين وخدمات\n"
+             "🎓 كورسات بالمقابلات الوظيفية والمندبة الطبية\n"
+             "🏢 وللشركات: نوفرلكم مندوبين وموظفين\n\n"
+             "احچي بالعربي أو دز بصمة صوت 🎤، واضغط Start 👇")
 AVATAR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "avatar.jpg")
 
 
@@ -2074,9 +2115,11 @@ def setup_profile():
     if current == SHORT_DESC:
         stats["profile"] = "set earlier"
         return
+    tg("removeMyProfilePhoto")  # drop the previous picture, then put the current one
     res = set_profile_photo()
     stats["profile"] = "picture set" if res.get("ok") else f"picture failed ({res.get('description')})"
     log.info("bot profile: %s", stats["profile"])
+    tg("setMyName", name=BOT_NAME)
     tg("setMyDescription", description=LONG_DESC)
     tg("setMyShortDescription", short_description=SHORT_DESC)
 
