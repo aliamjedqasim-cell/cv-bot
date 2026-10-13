@@ -1,7 +1,7 @@
-# Free outside visitor for the Render free plan (the server sleeps after 15 minutes without visitors):
-# - GitHub starts this every 5 minutes at best (often every 10-20), so each run visits 5 times, 4 minutes
-#   apart (~16 minutes), and the runs overlap: no gap long enough for the server to fall asleep
-# - after every update pushed to main, it asks the bot to deploy the new version (/sync)
+# Free outside visitor for the Render free plan (the server sleeps after 15 minutes without visitors).
+# GitHub starts scheduled runs late (often 10-30 minutes apart), so one run at a time stays ~40 minutes
+# and visits every 4 minutes; the next scheduled run waits in line and starts as soon as it ends.
+# After every update pushed to main, the deploy job asks the bot to install the new version (/sync).
 name: keep bot awake
 on:
   schedule:
@@ -10,19 +10,33 @@ on:
     branches: [main]
   workflow_dispatch:
 jobs:
-  visit:
+  deploy:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 5
     steps:
-      - name: Deploy the new version after a push
-        if: github.event_name == 'push'
+      - name: Install the new version
         run: |
           curl -sS -m 120 -o /dev/null https://cv-bot-o61r.onrender.com/ || true
           sleep 15
-          curl -sS -m 120 "https://cv-bot-o61r.onrender.com/sync?run=${{ github.run_id }}" || true
+          result=$(curl -sS -m 120 "https://cv-bot-o61r.onrender.com/sync?run=${{ github.run_id }}" | sed 's/<[^>]*>/ /g' | tr -s ' \n' ' ')
+          echo "::notice title=sync::$result"
+  visit:
+    if: github.event_name != 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    concurrency:
+      group: keep-awake
+      cancel-in-progress: false
+    steps:
       - name: Visit the bot every 4 minutes
         run: |
-          for i in 1 2 3 4 5; do
-            curl -sS -m 120 -o /dev/null -w "visit $i: %{http_code}\n" https://cv-bot-o61r.onrender.com/ || true
-            [ "$i" -lt 5 ] && sleep 240
+          for i in $(seq 1 11); do
+            code=$(curl -sS -m 120 -o /dev/null -w "%{http_code}" https://cv-bot-o61r.onrender.com/ || echo "error")
+            echo "visit $i: $code"
+            if [ "$i" -eq 1 ] || [ "$i" -eq 11 ]; then
+              health=$(curl -sS -m 120 https://cv-bot-o61r.onrender.com/health | sed 's/<[^>]*>/ /g' | tr -s ' \n' ' ' | cut -c1-900)
+              echo "::notice title=health $i::$health"
+            fi
+            if [ "$i" -lt 11 ]; then sleep 240; fi
           done
