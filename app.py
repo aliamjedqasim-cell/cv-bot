@@ -1951,6 +1951,25 @@ def self_test():
     return ["self-test:"] + out
 
 
+def latest_commit(repo, branch):
+    """Newest commit on GitHub. The API allows few anonymous calls from Render's shared addresses,
+    so git's own public endpoint (no such limit) is the fallback."""
+    try:
+        sha = http.get(f"https://api.github.com/repos/{repo}/commits/{branch}", timeout=15,
+                       headers={"Accept": "application/vnd.github+json"}).json().get("sha") or ""
+        if re.fullmatch(r"[0-9a-f]{40}", sha):
+            return sha
+    except Exception as e:
+        log.warning("github api check failed: %s", e)
+    try:
+        refs = http.get(f"https://github.com/{repo}.git/info/refs?service=git-upload-pack", timeout=15).text
+        m = re.search(r"([0-9a-f]{40}) refs/heads/" + re.escape(branch) + r"\b", refs)
+        return m.group(1) if m else ""
+    except Exception as e:
+        log.warning("github refs check failed: %s", e)
+        return ""
+
+
 last_sync = [0.0]
 
 
@@ -1962,12 +1981,7 @@ def sync_deploy():
     running = env("RENDER_GIT_COMMIT")
     repo = env("RENDER_GIT_REPO_SLUG") or "aliamjedqasim-cell/cv-bot"
     branch = env("RENDER_GIT_BRANCH") or "main"
-    try:
-        latest = http.get(f"https://api.github.com/repos/{repo}/commits/{branch}", timeout=15,
-                          headers={"Accept": "application/vnd.github+json"}).json().get("sha") or ""
-    except Exception as e:
-        log.warning("github check failed: %s", e)
-        latest = ""
+    latest = latest_commit(repo, branch)
     lines = [f"running: {running[:7] or 'unknown'}", f"latest on GitHub: {latest[:7] or 'unknown'}"]
     if not latest or not running:
         lines.append("result: could not compare versions")
