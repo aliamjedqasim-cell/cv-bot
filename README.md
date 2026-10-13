@@ -69,3 +69,5 @@
 - `fonts/`: خطوط Poppins و Carlito (رخصة SIL Open Font License)
 - `render.yaml`, `requirements.txt`: إعدادات التشغيل
 - `.github/workflows/keep-awake.yml`: يبقي البوت صاحي، وينصب التحديثات
+- `gunicorn.conf.py`: يشغّل المهام الخلفية (ربط تيليجرام، الإبقاء صاحي، المراقب) داخل العامل بس. Render يشغّل gunicorn بـ `--preload`، وأي اتصال قبل النسخ چان ممكن يعلّق البوت فما يرد
+- **المراقب (watchdog):** إذا اتصالات البوت علقت، يعيد تشغيل نفسه خلال دقايق
