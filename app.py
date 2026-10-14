@@ -203,7 +203,7 @@ QUESTIONS = {  # step -> (question, optional?)
     "job_duration": ("شگد اشتغلت بيه؟ ⏳\nاختار، أو اكتب مثل <b>8 أشهر</b> أو <b>2021 - حالياً</b>", True),
     "duties": ("شنو كانت مهامك بهذا الشغل؟ 📝\nاكتب كل مهمة بسطر، بالعربي عادي\n\n"
                "مثال:\n<b>زيارة الأطباء والصيدليات بمنطقة المنصور\nتحقيق التارگت الشهري</b>\n\n"
-               "إذا تريد أكتبلك مهام قوية جاهزة اضغط تخطي", True),
+               "إذا تريد فريقنا يكتبلك مهام قوية مناسبة اضغط تخطي", True),
     "more": ("تريد تضيف شغل ثاني؟", False),
     "customers": ("منو الزبائن اللي تعاملت وياهم بشغلك؟\nاختار كل اللي ينطبق، وبعدها اضغط <b>✔️ تم</b>", True),
     "products": ("شنو المنتجات أو التخصصات اللي سوّقتها؟ 💊\nمثال: <b>فلرات، بوتوكس</b> أو <b>مضادات حيوية</b>\n"
@@ -477,7 +477,7 @@ def cv_intro():
     intro = ("📝 <b>إنشاء سيرة ذاتية</b>\n\n"
              "1️⃣ اضغط زر <b>📋 انسخ الكليشة</b> اللي تحت\n"
              "2️⃣ الصقها برسالة جديدة، وعبّيها <b>بالعربي عادي</b>. الخانة اللي ما عندك اتركها فارغة\n"
-             "3️⃣ دزها برسالة وحدة، وأنا أرتب كلشي وأحوّله للإنگليزي ✨\n\n"
+             "3️⃣ دزها برسالة وحدة، وفريقنا يرتب كلشي ويكتبه بالإنگليزي ✨\n\n"
              f"{free_text}"
              "💼 <b>الخبرات:</b> كل شغل بسطر، مثل:\n<b>شركة النور - مندوب طبي - بغداد - سنتين</b>"
              f"{price}")
@@ -532,7 +532,7 @@ def send_form(chat_id):
 
 def start_steps(chat_id, sess):
     sess["step"], sess["fill"] = "name", False
-    send(chat_id, "تمام 👍 راح أسألك سؤال سؤال. جاوب بالعربي عادي.\n❌ للإلغاء اكتب /cancel", remove_keyboard=True)
+    send(chat_id, "تمام 👍 راح نسألك سؤال سؤال. جاوب بالعربي عادي.\n❌ للإلغاء اكتب /cancel", remove_keyboard=True)
     ask(chat_id, "name")
 
 
@@ -673,12 +673,12 @@ def handle_form(chat_id, sess, msg):
     d = sess["data"]
     text = (msg.get("text") or msg.get("caption") or "").strip()
     if msg.get("photo") and not text:
-        send(chat_id, "📸 الصورة راح أطلبها بعدين. هسه دز معلوماتك كتابة برسالة وحدة 🙏")
+        send(chat_id, "📸 الصورة نطلبها منك بعدين. هسه دز معلوماتك كتابة برسالة وحدة 🙏")
         return
     if len(clean(text)) < 15:
-        send(chat_id, "اكتب معلوماتك كلها برسالة وحدة حتى أرتبها 🙏\nأو اضغط <b>🗣️ أفضّل سؤال سؤال</b> فوگ.")
+        send(chat_id, "اكتب معلوماتك كلها برسالة وحدة حتى نرتبها 🙏\nأو اضغط <b>🗣️ أفضّل سؤال سؤال</b> فوگ.")
         return
-    send(chat_id, "⏳ لحظات، دا أقرأ معلوماتك وأرتبها...", remove_keyboard=True)
+    send(chat_id, "⏳ لحظات، دا نقرأ معلوماتك...", remove_keyboard=True)
     tg("sendChatAction", chat_id=chat_id, action="typing")
     data, how = ai.read_cv(text) if ai.enabled() else (None, "off")
     if data:
@@ -689,7 +689,7 @@ def handle_form(chat_id, sess, msg):
             log.warning("AI unavailable (%s); using the form reader", how)
         fields = parse_form(text)
         if not fields:
-            send(chat_id, "ما گدرت أفهم الرسالة 😅\nرجاءً انسخ الكليشة فوگ وعبّيها، "
+            send(chat_id, "ما گدرنا نقرأ الرسالة 😅\nرجاءً انسخ الكليشة فوگ وعبّيها، "
                           "أو اضغط <b>🗣️ أفضّل سؤال سؤال</b>.",
                  inline=[[{"text": "🗣️ أفضّل سؤال سؤال", "callback_data": "u:steps"}]])
             return
@@ -717,7 +717,7 @@ def receive_photo(chat_id, sess, file_id):
     except Exception:
         edited, face = None, False
     if not edited:
-        send(chat_id, "ما گدرت أفتح الصورة 😅 دز وحدة ثانية (صورة عادية، مو ملف)")
+        send(chat_id, "ما گدرنا نفتح الصورة 😅 دز وحدة ثانية (صورة عادية، مو ملف)")
         return False
     options = sess.setdefault("photo_options", [])
     if len(options) >= 6:
@@ -964,7 +964,7 @@ def voice_text(chat_id, msg):
     text, how = ai.transcribe(audio, "voice.ogg" if msg.get("voice") else (media.get("file_name") or "audio.mp3"))
     if not text:
         log.warning("voice not understood: %s", how)
-        send(chat_id, "🎤 ما گدرت أسمع البصمة زين 😅 عيدها بصوت أوضح، أو اكتب رجاءً.")
+        send(chat_id, "🎤 ما گدرنا نسمع البصمة زين 😅 عيدها بصوت أوضح، أو اكتب رجاءً.")
         return ""
     send(chat_id, "🎤 سمعتك: <i>" + esc(text[:350]) + ("..." if len(text) > 350 else "") + "</i>")
     return text
@@ -987,7 +987,7 @@ def handle_talk(chat_id, sess, msg, kind="text"):
         data = download_file(doc["file_id"], max_bytes=10 * 1024 * 1024)
         text = "\n".join(clean(x) for x in file_text(doc, data or b"").splitlines() if clean(x))[:6000]
         if len(text) < 30:
-            send(chat_id, "📄 ما گدرت أقرأ الملف 😅 دزه <b>PDF</b> أو <b>Word</b>، أو اكتب معلوماتك، أو دز بصمة 🎤")
+            send(chat_id, "📄 ما گدرنا نقرأ الملف 😅 دزه <b>PDF</b> أو <b>Word</b>، أو اكتب معلوماتك، أو دز بصمة 🎤")
             return
         kind = "file"
         send(chat_id, "📄 وصلني السي في القديم، دا أقرأه...")
@@ -997,7 +997,7 @@ def handle_talk(chat_id, sess, msg, kind="text"):
         return
     sess.setdefault("talk", []).append({"q": sess.pop("last_q", None), "a": text[:4000], "kind": kind})
     if kind != "file":
-        send(chat_id, "⏳ لحظات، دا أفهم معلوماتك وأرتبها...", remove_keyboard=True)
+        send(chat_id, "⏳ لحظات، دا نقرأ معلوماتك...", remove_keyboard=True)
     tg("sendChatAction", chat_id=chat_id, action="typing")
     data, how = ai.read_cv(conversation_text(sess))
     if not data:
@@ -1023,7 +1023,7 @@ def handle_talk(chat_id, sess, msg, kind="text"):
         d["_asked"] = sorted(set(d.get("_asked") or []) | set(todo))
         name = first_name(d)
         got = understood_line(d)
-        question = ((f"✅ تمام{' ' + esc(name) if name else ''}، فهمت معلوماتك" + (f": {got}" if got else "") + ".\n\n")
+        question = ((f"✅ تمام{' ' + esc(name) if name else ''}، وصلتنا معلوماتك" + (f": {got}" if got else "") + ".\n\n")
                     + ("باقي عندي بس هاي الشغلات، جاوب عليها <b>برسالة وحدة</b> (كتابة أو بصمة 🎤):\n\n" if len(todo) > 1
                        else "باقي شغلة وحدة 👇\n\n")
                     + "\n".join(TALK_ASK[k] for k in todo))
@@ -1059,7 +1059,7 @@ def handle_ai_edit(chat_id, sess, text, kind="edit"):
     data, how = ai.read_cv(conversation_text(sess))
     if not data:
         sess["talk"].pop()
-        send(chat_id, "ما گدرت أعدّل هسه 😅 استخدم زر <b>✏️ تعديل معلومة</b> تحت الملخص.")
+        send(chat_id, "ما گدرنا نعدّل هسه 😅 استخدم زر <b>✏️ تعديل معلومة</b> تحت الملخص.")
         return
     ground_ai(data, said_text(sess))
     merge_ai(sess["data"], data)
@@ -1218,7 +1218,7 @@ def summary_text(sess):
             for duty in (e.get("duties") or [])[:4]:
                 lines.append(f"        🇬🇧 • {esc(duty)}")
             if not e.get("duties"):
-                lines.append("      • <i>راح أكتب مهام قوية مناسبة تلقائياً</i>")
+                lines.append("      • <i>فريقنا يكتبلك مهام قوية مناسبة لوظيفتك</i>")
         if is_field_role(d):
             if d.get("customers"):
                 lines.append(line("🩺 <b>الزبائن:</b>", ar.get("customers"), d["customers"]))
@@ -1239,7 +1239,7 @@ def summary_text(sess):
     if d.get("skills"):
         lines.append(line("💪 <b>المهارات:</b>", ar.get("skills"), d["skills"]))
     else:
-        lines.append("💪 <b>المهارات:</b> <i>راح أختارلك أقوى المهارات تلقائياً</i>")
+        lines.append("💪 <b>المهارات:</b> <i>فريقنا يختارلك أقوى المهارات المناسبة لوظيفتك</i>")
     langs_ar = ["العربية (لغة أم)"]
     if d.get("english") and d["english"] != "none":
         langs_ar.append(f"الإنگليزية ({ar.get('english') or d['english']})")
@@ -1255,11 +1255,11 @@ def summary_text(sess):
     if d.get("age"):
         lines.insert(5, f"🎂 <b>العمر:</b> {esc(d['age'])}")
     if d.get("_talk") and ai.enabled():
-        lines.append("\n📝 <i>هاي المسودة الأولى من معلوماتك بالإنگليزي، وفريقنا يراجعها ويدققها قبل التسليم.</i>\n"
+        lines.append("\n📋 <i>هاي معلوماتك مثل ما راح تنكتب بالسي في. راجعها زين، لأن فريقنا راح يشتغل عليها.</i>\n"
                      "✍️ إذا أكو شي غلط، <b>اكتب التصحيح بكلامك</b> هنا، مثل: <i>غيّر المحافظة للبصرة</i>، "
-                     "أو دز بصمة 🎤. وإذا كلشي تمام اضغط <b>✅ تأكيد وإرسال</b>.")
+                     "أو دز بصمة 🎤. وإذا كلشي تمام اضغط <b>✅ تأكيد وإرسال للفريق</b>.")
     elif d.get("_ai"):
-        lines.append("\n📝 <i>هاي المسودة الأولى من معلوماتك بالإنگليزي. "
+        lines.append("\n📋 <i>هاي معلوماتك مثل ما راح تنكتب بالسي في. "
                      "تأكد منها، وإذا شي مو مضبوط اضغط ✏️ تعديل.</i>")
     elif d.get("_mt"):
         lines.append("\n🔤 <i>راجع شلون انكتبت معلوماتك بالإنگليزي، وإذا شي مو مضبوط اضغط ✏️ تعديل.</i>")
@@ -1274,7 +1274,7 @@ def summary_text(sess):
 
 def show_summary(chat_id, sess):
     send(chat_id, summary_text(sess), inline=[
-        [{"text": "✅ تأكيد وإرسال", "callback_data": "u:send"}],
+        [{"text": "✅ تأكيد وإرسال للفريق", "callback_data": "u:send"}],
         [{"text": "✏️ تعديل معلومة", "callback_data": "u:edit"},
          {"text": "🔄 أعيد من البداية", "callback_data": "u:restart"}],
     ])
@@ -1396,7 +1396,7 @@ def handle_cv_answer(chat_id, sess, msg):
         if text and d.get("_talk") and ai.enabled():
             handle_ai_edit(chat_id, sess, text)
             return
-        send(chat_id, "اضغط <b>✅ تأكيد وإرسال</b> أو <b>✏️ تعديل</b> تحت الملخص 👆")
+        send(chat_id, "اضغط <b>✅ تأكيد وإرسال للفريق</b> أو <b>✏️ تعديل</b> تحت الملخص 👆")
         return
     if step == "payment":
         handle_payment_proof(chat_id, sess, msg)
@@ -1642,15 +1642,13 @@ def cv_caption(d, chat_id, status):
 def payment_message():
     name = f"الاسم: <b>{esc(QI_CARD_NAME)}</b>\n" if QI_CARD_NAME else ""
     return (
-        "شكراً لإكمال معلوماتك 🤍\n\n"
         f"خدمة <b>{COMPANY}</b> تشمل إعداد <b>سيرة ذاتية احترافية بصيغة PDF</b>، مع ترشيحك للشركات "
         "اللي تطلب مندوبين وموظفين حسب مؤهلاتك ومتطلباتها.\n\n"
         f"💰 كلفة الخدمة: <b>{PRICE_IQD:,} دينار عراقي</b>\n\n"
         f"{GIFT_TEASER}\n\n"
         f"💳 حوّل على بطاقة <b>Qi Card</b>:\n{name}رقم البطاقة: <code>{esc(QI_CARD_NUMBER)}</code>\n\n"
         "📸 بعدها دز <b>صورة تأكيد الدفع</b> هنا.\n"
-        "بعد التأكد من الدفع، فريقنا يراجع السي في مالتك ويدققه، ويوصلك ويا الهدايا هنا"
-        f"{' خلال ساعات (بأوقات الدوام)' if CV_DELAY else ''}.\n\n"
+        f"بعد تأكيد الدفع، فريقنا يجهز السي في مالتك ويراجعه ويدققه، ويوصلك ويا الهدايا هنا <b>{CV_WAIT}</b>.\n\n"
         "<i>ملاحظة: ترشيح السيرة الذاتية يعتمد على توفر الفرص ومدى توافق مؤهلاتك مع متطلبات الوظيفة، "
         "ولا يضمن الحصول على مقابلة أو وظيفة.</i>"
     )
@@ -1732,6 +1730,56 @@ def make_gifts(chat_id, d, reply_to):
         return []
 
 
+SAMPLE_CV = {
+    "full_name": "Ahmed Kareem Hassan", "job_title": "Medical Representative", "phone": "+964 770 000 0000",
+    "email": "ahmed.sample@email.com", "city": "Baghdad", "degree_level": BACHELOR, "specialty": "Pharmacy",
+    "degree": "Bachelor's Degree in Pharmacy", "university": "University of Baghdad", "edu_status": "2021",
+    "has_experience": True, "customers": ["Doctors", "Pharmacies", "Private Clinics"], "territory": "Rusafa",
+    "products": "Cardiology and Diabetes Products", "licence": "car",
+    "experiences": [{"company": "Sample Pharma Co.", "title": "Medical Representative", "location": "Baghdad",
+                     "duration": "2 years", "duties": [
+                         "Visited 12-15 doctors and pharmacies daily to present cardiology and diabetes products.",
+                         "Achieved 110% of the monthly sales target for three consecutive quarters.",
+                         "Built strong relationships with key prescribers across the Rusafa territory."]},
+                    {"company": "City Community Pharmacy", "title": "Pharmacist", "location": "Baghdad",
+                     "duration": "1 year", "duties": [
+                         "Advised patients on correct medicine use and dosing.",
+                         "Managed stock levels and supplier orders."]}],
+    "achievements": ["Ranked first among new representatives in sales growth (2023)."],
+    "skills": ["Strong Communication Skills", "Negotiation Skills", "Product Presentation",
+               "Territory Planning", "Customer Relationship Management", "Time Management"],
+    "english": "Very Good", "courses": ["Professional Selling Skills", "Pharmaceutical Marketing Basics"],
+    "profile_en": ("Pharmacist and Medical Representative with three years of experience in pharmacy practice and "
+                   "field sales in Baghdad. Proven record of exceeding sales targets and building trusted "
+                   "relationships with doctors and pharmacies."),
+}
+sample_cache = {}
+
+
+def send_sample(chat_id):
+    """Before payment: a finished CV of an invented person, as a sample of the team's work (not their own CV)."""
+    caption = (f"🖼️ <b>نموذج من شغل فريق {COMPANY}</b> (لشخص افتراضي)\n"
+               "السي في مالتك يتصمم بنفس المستوى: بمعلوماتك وصورتك، وصفحة وحدة مرتبة 👌")
+    try:
+        if sample_cache.get("id"):
+            r = tg("sendPhoto", chat_id=chat_id, photo=sample_cache["id"], caption=caption, parse_mode="HTML")
+            if r.get("ok"):
+                return True
+        if not sample_cache.get("img"):
+            refresh_languages(SAMPLE_CV)
+            sample_cache["img"] = extras.sample_image(build_cv(dict(SAMPLE_CV), extras.sample_photo()))
+        if not sample_cache["img"]:
+            return False
+        r = http.post(f"{API}/sendPhoto", timeout=60, data={"chat_id": str(chat_id), "caption": caption, "parse_mode": "HTML"},
+                      files={"photo": ("sample_cv.jpg", sample_cache["img"], "image/jpeg")}).json()
+        if r.get("ok"):
+            sample_cache["id"] = ((r.get("result") or {}).get("photo") or [{}])[-1].get("file_id")
+        return bool(r.get("ok"))
+    except Exception:
+        log.exception("sample CV failed")
+        return False
+
+
 def send_preview(chat_id, pdf):
     """The teaser before payment: their own CV, top sharp, the rest blurred."""
     try:
@@ -1764,8 +1812,7 @@ def remind_admin(chat_id, minutes):
 def finish_cv(chat_id, sess):
     d = sess["data"]
     refresh_languages(d)
-    send(chat_id, "⏳ لحظات، دا نجهز المسودة الأولى للسي في مالتك...", remove_keyboard=True)
-    tg("sendChatAction", chat_id=chat_id, action="upload_document")
+    tg("sendChatAction", chat_id=chat_id, action="typing")
     try:
         pdf = build_cv(latinize(d), sess.get("photo"))
     except Exception:
@@ -1796,15 +1843,20 @@ def finish_cv(chat_id, sess):
         send(chat_id, "صار خطأ بالإرسال 😔 جرّب مرة ثانية بعد شوية من /start")
         return
     admin_msg = res["result"]["message_id"]
+    receipt = (f"✅ <b>استلمنا طلبك</b>\n🧾 رقم الطلب: <b>#M{admin_msg}</b>\n\n"
+               f"👩‍💼 معلوماتك هسه عند فريق {COMPANY}. "
+               + ("بعد تأكيد الدفع، موظفينا يجهزون السي في مالتك ويراجعونه ويدققونه، ويوصلك هنا."
+                  if PAID else "موظفينا يراجعون طلبك، وبعدها يجهزون السي في مالتك ويوصلك هنا.")
+               + "\n\n" + order_status(None, 1))
+    send(chat_id, receipt, remove_keyboard=True)
+    send_sample(chat_id)
     if PAID:
         sess["mode"], sess["step"] = "cv", "payment"
         sess["admin_msg"] = admin_msg
-        send_preview(chat_id, pdf)
         send(chat_id, payment_message())
     else:
         sessions.pop(chat_id, None)
-        send(chat_id, "✅ وصلتنا معلوماتك!\n\n👩‍💼 السي في مالتك هسه عند موظفينا <b>للمراجعة والموافقة</b>، "
-                      "وراح يوصلك هنا أول ما يجهز 🤍\n\n" + GIFT_TEASER)
+        send(chat_id, GIFT_TEASER)
     ids = make_gifts(chat_id, d, admin_msg)  # the buyer already has their message; this runs meanwhile
     if ids:
         gifts_by_user[chat_id] = ids
@@ -1846,21 +1898,23 @@ def handle_payment_proof(chat_id, sess, msg):
             timer.daemon = True
             timer.start()
         send(chat_id, "✅ <b>استلمنا صورة الدفع، شكراً إلك 🤍</b>\n\n"
-                      "👩‍💼 هسه موظف من فريقنا دا يتأكد من وصول المبلغ، وبعدها نبدي نراجع السي في مالتك "
-                      "وندققه ونجهز النسخة النهائية.\n\n"
+                      "👩‍💼 هسه موظف من فريقنا دا يتأكد من وصول المبلغ، وبعدها نبدي نجهز السي في مالتك "
+                      "ونراجعه وندققه.\n\n"
                       "راح يوصلك هنا:\n📄 السي في مالتك\n🎁 ويا الهدايا: نسخة ATS، رسالة تغطية، وتحضير المقابلة\n\n"
-                      "ما تحتاج تسوي شي ثاني، بس خلي إشعارات البوت مفتوحة 🔔")
+                      + order_status(sess.get("admin_msg") if sess else None, 1)
+                      + "\n\nما تحتاج تسوي شي ثاني، بس خلي إشعارات البوت مفتوحة 🔔")
     else:
         send(chat_id, "صار خطأ بالإرسال 😔 دز الصورة مرة ثانية")
 
 
-# ======================================================= scheduled delivery
-# After approval the CV is not sent at once: the buyer is told our team is preparing the final copy, and it
-# arrives a few hours later, only in working hours (Baghdad time); approved at night -> next morning.
-# The queue lives in memory and in one pinned message in the admin chat, so a restart or deploy loses nothing.
+# ======================================================= delivery (the admin decides when)
+# After approval the CV waits with the admin: the buyer is told our team is preparing the final copy, and the
+# admin picks when it goes out (now, in a few hours, or at the next opening time) with buttons under the CV.
+# Waiting and scheduled CVs live in memory and in one pinned message in the admin chat, so a restart or deploy
+# loses nothing.
 def _minutes(name, default):
-    raw = os.environ.get(name, "").strip()
-    return int(re.sub(r"\D", "", raw)) if re.sub(r"\D", "", raw) else default
+    raw = re.sub(r"\D", "", os.environ.get(name, ""))
+    return int(raw) if raw else default
 
 
 def _work_hours():
@@ -1868,31 +1922,62 @@ def _work_hours():
     return (m[0], m[1]) if len(m) >= 2 and 0 <= m[0] < m[1] <= 24 else (10, 22)
 
 
-CV_DELAY = _minutes("CV_DELAY_MINUTES", 180)  # 0 = send right after approval
-WORK_START, WORK_END = _work_hours()  # e.g. WORK_HOURS=10-22
+DELIVERY_MODE = os.environ.get("DELIVERY_MODE", "manual").strip().lower()  # "now" = send right after approval
+CV_WAIT = env("CV_WAIT", "خلال 24 ساعة")  # what the buyer is told about the waiting time
+CV_DELAY = _minutes("CV_DELAY_MINUTES", 180) or 180  # the "in a few hours" button
+REMIND_HOURS = _minutes("CV_REMIND_HOURS", 4)  # a waiting CV the admin has not decided on -> one reminder (0 = off)
+WORK_START, WORK_END = _work_hours()  # e.g. WORK_HOURS=10-22, Baghdad time
 BAGHDAD = timezone(timedelta(hours=3))
 SCHEDULE_HEAD = "📌 جدول تسليم السي في"
-deliveries = {}  # admin CV message id -> {"u": user, "t": when, "g": gift ids, "f": file id, "cap": admin caption}
+# admin CV message id -> {"u": user, "t": send time (0 = waiting for the admin), "r": reminder time,
+#                         "g": gift ids, "f": file id, "cap": admin caption, "n": name}
+deliveries = {}
 schedule = {"msg": None, "loaded": False, "text": ""}
 schedule_lock = threading.RLock()
+STAGES_PAID = ["استلام المعلومات", "تأكيد الدفع", "تجهيز ومراجعة السي في من فريقنا", "التسليم ويا الهدايا"]
+STAGES_FREE = ["استلام المعلومات", "مراجعة وموافقة فريقنا", "تجهيز السي في", "التسليم ويا الهدايا"]
+
+
+def order_status(order, stage):
+    """The buyer's order tracker: done steps ✅, the current one ⏳, the rest ▫️."""
+    stages = STAGES_PAID if PAID else STAGES_FREE
+    rows = [("✅" if i < stage else "⏳" if i == stage else "▫️") + " " + name for i, name in enumerate(stages)]
+    head = f"📋 <b>مراحل طلبك</b>" + (f" <b>#M{order}</b>" if order else "") + ":"
+    return head + "\n" + "\n".join(rows)
+
+
+def next_opening(now=None):
+    """The next start of working hours (Baghdad), a few minutes after the hour."""
+    local = datetime.fromtimestamp(now or time.time(), BAGHDAD)
+    opening = local.replace(hour=WORK_START, minute=0, second=0, microsecond=0)
+    if local >= opening:
+        opening += timedelta(days=1)
+    return opening.timestamp() + random.randint(5, 40) * 60
+
+
+def in_work_hours(at):
+    """at, or the next opening time if at falls outside working hours."""
+    local = datetime.fromtimestamp(at, BAGHDAD)
+    if WORK_START <= local.hour < WORK_END:
+        return at
+    return next_opening(at)
 
 
 def delivery_time(now=None):
+    """The 'in a few hours' button: about CV_DELAY minutes, moved to the next morning if that is after hours."""
     now = now or time.time()
-    if not CV_DELAY:
-        return now
-    at = now + CV_DELAY * 60 * random.uniform(0.85, 1.15)
-    local = datetime.fromtimestamp(at, BAGHDAD)
-    opening = local.replace(hour=WORK_START, minute=0, second=0, microsecond=0)
-    if local.hour < WORK_START:
-        return opening.timestamp() + random.randint(5, 45) * 60
-    if local.hour >= WORK_END:
-        return (opening + timedelta(days=1)).timestamp() + random.randint(5, 45) * 60
-    return at
+    return in_work_hours(now + CV_DELAY * 60 * random.uniform(0.9, 1.1))
+
+
+def hours_text(minutes):
+    h = round(minutes / 60)
+    return "ساعة" if h <= 1 else "ساعتين" if h == 2 else f"{h} ساعات" if h <= 10 else f"{h} ساعة"
 
 
 def when_text(at, now=None):
     """How the buyer is told when the CV arrives (the team's estimate, never an exact minute)."""
+    if not at:
+        return CV_WAIT
     now = now or time.time()
     a, n = datetime.fromtimestamp(at, BAGHDAD), datetime.fromtimestamp(now, BAGHDAD)
     hours = (at - now) / 3600
@@ -1901,11 +1986,7 @@ def when_text(at, now=None):
     if a.date() == n.date():
         if n.hour < WORK_START and a.hour < 12:
             return "اليوم الصبح إن شاء الله"
-        if hours < 1.5:
-            return "خلال ساعة تقريباً"
-        if hours < 2.5:
-            return "خلال ساعتين تقريباً"
-        return f"خلال {round(hours)} ساعات تقريباً" if hours < 10.5 else "اليوم إن شاء الله"
+        return f"خلال {hours_text(hours * 60)} تقريباً" if hours < 10.5 else "اليوم إن شاء الله"
     if (a.date() - n.date()).days == 1:
         return "باچر الصبح إن شاء الله" if a.hour < 12 else "باچر إن شاء الله"
     return "بأقرب وقت إن شاء الله"
@@ -1920,7 +2001,7 @@ def clock(at, now=None):
 
 
 def load_schedule():
-    """After a restart: read the queue back from the pinned message in the admin chat."""
+    """After a restart: read the waiting and scheduled CVs back from the pinned message in the admin chat."""
     with schedule_lock:
         if schedule["loaded"] or not ADMIN_CHAT_ID:
             return
@@ -1935,8 +2016,10 @@ def load_schedule():
         schedule["msg"] = pin.get("message_id")
         m = re.search(r"(\[.*\])\s*$", text, re.S)
         try:
-            for u, t, k, g in json.loads(m.group(1)) if m else []:
-                deliveries.setdefault(int(k), {"u": int(u), "t": float(t), "g": [int(x) for x in g]})
+            for row in json.loads(m.group(1)) if m else []:
+                u, t, k, g = row[:4]
+                deliveries.setdefault(int(k), {"u": int(u), "t": float(t), "g": [int(x) for x in g],
+                                               "r": float(row[4]) if len(row) > 4 else 0})
         except Exception:
             log.exception("could not read the delivery schedule")
         log.info("delivery schedule loaded: %d waiting", len(deliveries))
@@ -1946,10 +2029,12 @@ def save_schedule():
     if not ADMIN_CHAT_ID:
         return
     with schedule_lock:
-        load_schedule()  # never overwrite a queue that was not read back yet
-        items = sorted(deliveries.items(), key=lambda kv: kv[1]["t"])
-        state = json.dumps([[v["u"], int(v["t"]), k, v.get("g") or []] for k, v in items], separators=(",", ":"))
-        rows = [f"• {esc(v.get('n') or 'متقدم')} ← {datetime.fromtimestamp(v['t'], BAGHDAD).strftime('%d/%m %H:%M')}"
+        load_schedule()  # never overwrite a list that was not read back yet
+        items = sorted(deliveries.items(), key=lambda kv: (kv[1]["t"] or 9e12, kv[0]))
+        state = json.dumps([[v["u"], int(v["t"]), k, v.get("g") or [], int(v.get("r") or 0)] for k, v in items],
+                           separators=(",", ":"))
+        rows = [f"• {esc(v.get('n') or 'متقدم')} ← "
+                + (datetime.fromtimestamp(v["t"], BAGHDAD).strftime("%d/%m %H:%M") if v["t"] else "ينتظر قرارك")
                 for k, v in items[:20]] + ([f"… و{len(items) - 20} غيرهم"] if len(items) > 20 else [])
         text = (f"<b>{SCHEDULE_HEAD}</b>\n<i>البوت يحدّث هاي الرسالة وحده ويرجعلها إذا انعاد تشغيله، خليها مثبتة.</i>\n\n"
                 + ("\n".join(rows) if rows else "ماكو سي في بالانتظار ✅") + f"\n\n<code>{esc(state)}</code>")
@@ -1969,7 +2054,34 @@ def save_schedule():
 
 
 def waiting_delivery(chat_id):
-    return next((v for v in list(deliveries.values()) if v["u"] == chat_id), None)
+    """(order number, job) of a CV this person is waiting for, or None."""
+    return next(((k, v) for k, v in list(deliveries.items()) if v["u"] == chat_id), None)
+
+
+def base_caption(caption):
+    """The admin's CV caption without the last delivery line (so it can be rewritten)."""
+    return re.split(r"\n(?:⏳ السي في ينتظر قرارك|⏰ يوصله)", caption or "")[0]
+
+
+def delivery_buttons(target, gift_ids, scheduled):
+    tail = f"{target}" + "".join(f":{i}" for i in gift_ids)
+    if scheduled:
+        rows = [[{"text": "📤 أرسله هسه", "callback_data": f"now:{tail}"[:64]},
+                 {"text": "↩️ إلغاء الموعد", "callback_data": f"hold:{tail}"[:64]}]]
+    else:
+        rows = [[{"text": "📤 أرسله هسه", "callback_data": f"now:{tail}"[:64]}],
+                [{"text": f"⏰ بعد {hours_text(CV_DELAY)}", "callback_data": f"later:{tail}"[:64]},
+                 {"text": f"🌅 أول الدوام ({WORK_START % 12 or 12} {'الصبح' if WORK_START < 12 else 'العصر'})",
+                  "callback_data": f"morn:{tail}"[:64]}]]
+    return {"inline_keyboard": rows}
+
+
+def show_delivery_choice(mid, job):
+    """Rewrites the admin's CV caption: waiting for a decision, or the time it is set to go out."""
+    line = (f"⏰ يوصله: {clock(job['t'])}" if job["t"] else
+            "⏳ السي في ينتظر قرارك: اختار وقت الإرسال 👇")
+    tg("editMessageCaption", chat_id=ADMIN_CHAT_ID, message_id=mid, caption=f"{job.get('cap') or ''}\n{line}"[:1024],
+       reply_markup=delivery_buttons(job["u"], job.get("g") or [], bool(job["t"])))
 
 
 def deliver_cv(mid, job=None, claimed=False):
@@ -1985,7 +2097,7 @@ def deliver_cv(mid, job=None, claimed=False):
             save_schedule()
             return False
     target = job["u"]
-    caption = (f"🎉 <b>السي في مالتك جاهز!</b>\nراجعه فريقنا ودققه، وهسه تگدر تقدّم بيه. بالتوفيق 🤍\n"
+    caption = (f"🎉 <b>السي في مالتك جاهز!</b>\nجهّزه فريقنا وراجعه، وهسه تگدر تقدّم بيه. بالتوفيق 🤍\n"
                f"— فريق {COMPANY}")
     res = (tg("sendDocument", chat_id=target, document=job["f"], caption=caption, parse_mode="HTML")
            if job.get("f") else {"ok": False})
@@ -2013,9 +2125,15 @@ def deliver_cv(mid, job=None, claimed=False):
 
 def deliver_due(now=None):
     now = now or time.time()
-    for mid in [k for k, v in list(deliveries.items()) if v["t"] <= now]:
+    for mid, job in list(deliveries.items()):
         try:
-            deliver_cv(mid)
+            if job["t"] and job["t"] <= now:
+                deliver_cv(mid)
+            elif not job["t"] and job.get("r") and job["r"] <= now:
+                job["r"] = 0
+                send(ADMIN_CHAT_ID, f"⏰ <b>تذكير:</b> {esc(job.get('n') or 'متقدم')} ينتظر السي في مالته.\n"
+                                    "اختار وقت الإرسال من الأزرار تحت السي في 👆", reply_to=mid)
+                save_schedule()
         except Exception:
             log.exception("delivery failed")
 
@@ -2031,32 +2149,44 @@ def delivery_loop():
 
 
 def approve_cv(msg, target, gift_ids, pending):
-    """The admin approved (payment checked): tell the person our team is preparing it, then deliver on time."""
+    """The admin approved (payment checked): the person is told our team is preparing it; the CV then waits
+    for the admin to pick when it goes out."""
     mid, caption = msg.get("message_id"), msg.get("caption") or ""
     name = (pending or {}).get("name") or (re.search(r"👤 (.+)", caption) or [None, None])[1]
-    base = f"{caption}\n\n✅ تمت الموافقة"
-    job = {"u": target, "t": delivery_time(), "g": gift_ids, "f": (msg.get("document") or {}).get("file_id"),
-           "cap": base, "n": name}
-    if job["t"] - time.time() < 60:
+    base = f"{base_caption(caption)}\n\n✅ {'الدفع مأكد' if PAID else 'تمت الموافقة'}"
+    job = {"u": target, "t": 0, "g": gift_ids, "f": (msg.get("document") or {}).get("file_id"), "cap": base,
+           "n": name, "r": in_work_hours(time.time() + REMIND_HOURS * 3600) if REMIND_HOURS else 0}
+    if DELIVERY_MODE == "now":
         deliver_cv(mid, job, claimed=True)
         return
-    with schedule_lock:
-        deliveries[mid] = job
     head = ("✅ <b>تم تأكيد الدفع، شكراً إلك 🤍</b>" if PAID else
-            "✅ <b>تمت الموافقة على السي في مالتك من قبل فريقنا 🤍</b>")
-    res = send(target, f"{head}\n\n👩‍💼 هسه السي في مالتك عند فريق {COMPANY}: دا نراجع المعلومات والصياغة "
-                       "والتنسيق ونجهز النسخة النهائية.\n\n"
-                       f"⏰ راح يوصلك هنا <b>{when_text(job['t'])}</b>، ويا الهدايا 🎁\n"
-                       "خلي إشعارات البوت مفتوحة 🔔")
+            "✅ <b>تمت الموافقة على طلبك من قبل فريقنا 🤍</b>")
+    res = send(target, f"{head}\n\n👩‍💼 هسه السي في مالتك عند فريق {COMPANY}: دا نجهزه ونراجع المعلومات "
+                       "والصياغة والتنسيق، ونجهز هداياك.\n"
+                       f"⏰ يوصلك هنا <b>{CV_WAIT}</b> إن شاء الله.\n\n"
+                       f"{order_status(mid, 2)}\n\nخلي إشعارات البوت مفتوحة 🔔")
     if not res.get("ok"):  # blocked the bot: nothing to wait for
-        deliveries.pop(mid, None)
         tg("editMessageCaption", chat_id=ADMIN_CHAT_ID, message_id=mid,
            caption=f"{base}\n⚠️ ما گدرت أوصله (يمكن الشخص حاظر البوت)"[:1024])
         return
-    tag_ids = "".join(f":{i}" for i in gift_ids)
-    tg("editMessageCaption", chat_id=ADMIN_CHAT_ID, message_id=mid,
-       caption=f"{base}\n⏰ يوصله تلقائياً: {clock(job['t'])}"[:1024],
-       reply_markup={"inline_keyboard": [[{"text": "⚡ أرسله هسه", "callback_data": f"now:{target}{tag_ids}"[:64]}]]})
+    with schedule_lock:
+        deliveries[mid] = job
+    show_delivery_choice(mid, job)
+    save_schedule()
+
+
+def set_delivery(mid, msg, target, gift_ids, when):
+    """Admin buttons: when = 'later' / 'morn' / 'hold' (cancel the time)."""
+    with schedule_lock:
+        job = deliveries.get(mid) or {"u": target, "g": gift_ids, "n": None}
+        job.setdefault("g", gift_ids)
+        job["g"] = job.get("g") or gift_ids
+        job["f"] = job.get("f") or (msg.get("document") or {}).get("file_id")
+        job["cap"] = job.get("cap") or base_caption(msg.get("caption") or "")
+        job["t"] = delivery_time() if when == "later" else next_opening() if when == "morn" else 0
+        job["r"] = 0
+        deliveries[mid] = job
+    show_delivery_choice(mid, job)
     save_schedule()
 
 
@@ -2373,12 +2503,14 @@ def handle_callback(cq):
                 if PAID else "عذراً، نحتاج نراجع معلوماتك 🙏 تگدر تعيد التقديم من /start أو راح يتواصل وياك أحد موظفينا.")
         send(target, text)
         tg("editMessageCaption", chat_id=chat_id, message_id=mid, caption=f"{caption}\n\n❌ مرفوض"[:1024])
-    elif action == "now":  # the admin wants a scheduled CV sent right away
+    elif action == "now":  # the admin sends the CV now
         drop_buttons()
         gift_ids = [int(x) for x in parts[2:] if x.isdigit()]
         job = {"u": target, "g": gift_ids, "f": (msg.get("document") or {}).get("file_id"),
-               "cap": (msg.get("caption") or "").split("\n⏰")[0]}
+               "cap": base_caption(msg.get("caption") or "")}
         deliver_cv(mid, job, claimed=True)
+    elif action in ("later", "morn", "hold"):  # the admin picks a time (or cancels it)
+        set_delivery(mid, msg, target, [int(x) for x in parts[2:] if x.isdigit()], action)
     elif action in ("kc", "kn"):
         course = parts[2] if len(parts) > 2 else ""
         drop_buttons()
@@ -2488,8 +2620,10 @@ def handle_update(upd):
             send(chat_id, f"⏳ موظفنا دا يتأكد من الدفع هسه (من {mins} دقيقة).\n"
                           "بعدها فريقنا يكمل تجهيز السي في مالتك، ويوصلك هنا ويا الهدايا 🤍")
         elif not cmd and waiting_delivery(chat_id):
+            order, job = waiting_delivery(chat_id)
             send(chat_id, "⏳ السي في مالتك عند فريقنا هسه، دا نجهز النسخة النهائية.\n"
-                          f"راح يوصلك هنا {when_text(waiting_delivery(chat_id)['t'])} ويا الهدايا 🤍")
+                          f"راح يوصلك هنا {when_text(job['t']) if job['t'] else 'قريباً إن شاء الله'} ويا الهدايا 🤍\n\n"
+                          + order_status(order, 2))
         elif ai.enabled() and (len(clean(text)) >= 40 or msg.get("voice") or msg.get("audio")):
             # they just wrote (or said) their details without pressing anything: start the CV right away
             sess = new_session(chat_id, "cv", "talk", msg.get("from") or {})
@@ -2654,16 +2788,17 @@ def self_test():
         pdf = build_cv(latinize(d), None)
         pages = len(re.findall(rb"/Type\s*/Page[^s]", pdf))
         out.append(f"cv pdf: {'OK' if pdf[:4] == b'%PDF' else 'BAD'} ({len(pdf) // 1024} KB, {pages} page)")
-        img = extras.preview_image(pdf)
-        out.append("preview image (before payment): " + (f"OK ({len(img) // 1024} KB)" if img else "FAILED (no PDF renderer)"))
+        refresh_languages(SAMPLE_CV)
+        sample = extras.sample_image(build_cv(dict(SAMPLE_CV), extras.sample_photo()))
+        out.append("sample CV image (before payment): " + (f"OK ({len(sample) // 1024} KB)" if sample else "FAILED (no PDF renderer)"))
         out.append("face detector for photos: " + ("ready" if photos.detector_ready() else "missing (uses a centred crop)"))
         vids = {k: sum(os.path.exists(os.path.join(COURSE_DIR, "videos", f"{k}-{n}.mp4"))
                        for n in range(1, len(course_lessons(k)) + 1)) for k in COURSES}
         out.append("course videos: " + ", ".join(f"{k} {v}/{len(course_lessons(k))}" for k, v in vids.items())
                    + f" | course price: {COURSE_PRICE or 'not set (admin request)'}")
-        out.append(f"cv delivery: {'about ' + str(CV_DELAY) + ' min after approval' if CV_DELAY else 'right after approval'}"
-                   f", working hours {WORK_START}-{WORK_END} Baghdad, waiting {len(deliveries)}"
-                   f", schedule {'pinned' if schedule['msg'] else 'loaded' if schedule['loaded'] else 'not read yet'}")
+        out.append(f"cv delivery: {'right after approval' if DELIVERY_MODE == 'now' else 'admin chooses (buttons)'}"
+                   f", buyer told '{CV_WAIT}', later button {CV_DELAY} min, working hours {WORK_START}-{WORK_END} Baghdad"
+                   f", waiting {len(deliveries)}, schedule {'pinned' if schedule['msg'] else 'loaded' if schedule['loaded'] else 'not read yet'}")
         ats, cover = extras.build_ats_cv(latinize(d)), extras.build_cover_letter(latinize(d), None)
         out.append(f"gift files: ATS CV {'OK' if ats[:4] == b'%PDF' else 'BAD'}, cover letter {'OK' if cover[:4] == b'%PDF' else 'BAD'}")
         if used_ai:

@@ -156,3 +156,37 @@ def preview_image(pdf_bytes):
     buf = BytesIO()
     img.save(buf, "JPEG", quality=82)
     return buf.getvalue()
+
+
+def sample_image(pdf_bytes):
+    """A finished CV of an invented person, shown as "a sample of our work" (marked SAMPLE)."""
+    try:
+        import pypdfium2 as pdfium
+        page = pdfium.PdfDocument(pdf_bytes)[0]
+        img = page.render(scale=1.6).to_pil().convert("RGB")
+    except Exception:
+        return None
+    w, h = img.size
+    over = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    font = ImageFont.truetype(str(FONT_DIR / "Poppins-Bold.ttf"), int(w * 0.13))
+    mark = Image.new("RGBA", (int(w * 1.2), int(w * 0.22)), (0, 0, 0, 0))
+    ImageDraw.Draw(mark).text((mark.width // 2, mark.height // 2), "SAMPLE", font=font, anchor="mm",
+                              fill=(30, 31, 36, 38))
+    mark = mark.rotate(28, expand=True)
+    over.alpha_composite(mark, ((w - mark.width) // 2, int(h * 0.55) - mark.height // 2))
+    img = Image.alpha_composite(img.convert("RGBA"), over).convert("RGB")
+    buf = BytesIO()
+    img.save(buf, "JPEG", quality=84)
+    return buf.getvalue()
+
+
+def sample_photo():
+    """A plain silhouette instead of a real person's face, for the sample CV."""
+    size = 600
+    im = Image.new("RGB", (size, size), (214, 222, 230))
+    d = ImageDraw.Draw(im)
+    d.ellipse((size * 0.32, size * 0.16, size * 0.68, size * 0.52), fill=(150, 164, 180))
+    d.ellipse((size * 0.14, size * 0.58, size * 0.86, size * 1.3), fill=(150, 164, 180))
+    buf = BytesIO()
+    im.save(buf, "JPEG", quality=90)
+    return buf.getvalue()
