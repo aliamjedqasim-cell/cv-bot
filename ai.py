@@ -91,12 +91,15 @@ WRITING RULES:
 - edu_status: the 4-digit graduation year if graduated, or "1st-Year Student" ... "Final-Year Student" if still studying, else null.
 - has_experience: true if they mention any work experience, false if they say they have none (e.g. "ماكو خبرة", "ما اشتغلت", "خريج جديد بدون خبرة"), null if not mentioned.
 - experiences: one item per POSITION, newest first. If they were promoted inside the same company (e.g. representative, then team leader, then supervisor), make one item per position with the same company and each position's own title and duration. location_en: the city plus the governorates/areas they covered, if stated. duties_en: 3-4 strong bullet points starting with action verbs, built from what they described (visit plans, doctor relationships, training representatives, following targets, territory management, reports...) and what that exact position normally involves; leadership duties only if they stated leading people. Never add numbers or results they did not state.
-- achievements_en: ONLY concrete results they stated (e.g. target percentage, sales growth, new accounts or areas opened, number of reps trained), written as strong bullets with their real numbers. If none were stated: []. Never put normal duties here.
+- duties_en may include the real numbers they gave about the work itself (e.g. "Visited 10-12 doctors and clinics daily across 3 areas"). Never estimate a number.
+- achievements_en: ONLY concrete results they stated, with their real numbers: target achievement %, sales value or growth, customers or clinics converted into regular buyers, new accounts or areas opened, number of reps trained, promotions. Written as strong bullets starting with a verb (e.g. "Converted 15 clinics into regular buyers within 6 months"). If none were stated: []. Never put normal duties here, and never turn a duty into a fake result.
+- products_en: the products or specialties they sold, as correct English product names or categories (brand names in their real English spelling), separated by commas. Translate Arabic words, NEVER spell them in Latin letters: فلر/فلرات = Dermal Fillers, بوتوكس = Botulinum Toxin, ميزو/ميزوثيرابي = Mesotherapy, نضارة/ابر النضارة = Skin Boosters, خيوط = PDO Threads, ابر/سرنجات = Medical Needles & Syringes, كانيولا = Cannulas, مضادات حيوية = Antibiotics. products_ar: their own words.
 - customers_en: only from Doctors, Pharmacies, Clinics, Hospitals, Shops & Markets, Companies, as stated.
 - licence: "car" (driving licence and a car), "licence" (licence, no car), "none" (said no), or null if not mentioned. survey: true if they did a field/market survey, false if they said no, null if not mentioned.
 - skills_en: 9 to 12 skills. First job-specific skills supported by their experience or study (for medical sales e.g. "Medical Sales & Territory Management", "Doctor Relationship Management", "Sales Target Planning & Tracking", "Product Presentation", "Market & Competitor Analysis"; "Team Leadership & Coaching" only if they led people), then the skills they mentioned, then a few professional soft skills. No duplicates, consistent Title Case.
-- english_level: exactly one of "Fluent", "Very Good", "Good", "Intermediate", "Basic", "none", or null. other_languages_en: languages other than Arabic and English.
-- profile_en: a specific Professional Summary of 2-3 sentences, without "I": their real level and years/companies/territories/specialty as stated, what they are strongest at, and the role they are seeking. Avoid empty clichés ("highly motivated", "results-driven", "dynamic") unless backed by a stated fact.
+- english_level: exactly one of "Fluent", "Very Good", "Good", "Intermediate", "Basic", "none", or null.
+- other_languages_en: languages other than Arabic and English, each as "Language: Level" with the level they stated (Fluent, Very Good, Good, Intermediate, Basic; ممتاز = Fluent, جيد جداً = Very Good, جيد = Good, متوسط = Intermediate, ضعيف/مبتدئ = Basic), or just "Language" if they did not say the level. Never guess a level.
+- profile_en: a strong, specific Professional Summary of 3 sentences (about 55-75 words), without "I". If they have ANY work experience, the experience is the centre: open with their role and how long (pattern: "<Role> with <duration> of field experience at <company>, promoting <products> to <customers> across <territory>." using only their real facts), then what they can deliver for a company (relationships with doctors, product presentation, negotiation and closing, territory coverage) with their real numbers or results if stated, then the role they are seeking. Their studies come last and briefly, and only as a supporting point (e.g. "Currently studying Civil Engineering alongside field work."); never open the summary with the degree or "student" when they have experience, especially when the study is unrelated to the job. Without experience: open with the degree and the most relevant skills or training. Avoid empty clichés ("highly motivated", "results-driven", "dynamic", "passionate") unless backed by a stated fact.
 - objective_en: one short sentence naming the role they want (used only if needed).
 - age: digits only if stated (convert a birth year to an age in 2026), else null.
 - *_ar fields: copy the person's own words for that item (short), or null. skills_ar / courses_ar / duties_ar / achievements_ar: their own words as a list.
@@ -213,6 +216,20 @@ def write_extras(cv_facts):
     """Cover letter + interview preparation for the buyer. Returns (data, model) or (None, reason)."""
     return _ask(json.dumps(cv_facts, ensure_ascii=False)[:6000], EXTRAS_SYSTEM, EXTRAS_SCHEMA, "cv_extras",
                 max_tokens=4000, seconds=60)
+
+
+NUMBERS_SCHEMA = _obj({"achievements_en": _list(), "duties_en": _list()})
+NUMBERS_SYSTEM = """You write CV bullets for an Iraqi job seeker from the numbers they gave about their work (usually Iraqi Arabic).
+- achievements_en: results (target achievement %, sales value or growth, customers/clinics converted into regular buyers, new accounts or areas opened, reps trained, promotions), each a strong English bullet starting with a past-tense verb, e.g. "Converted 15 clinics into regular buyers".
+- duties_en: activity numbers (visits per day or week, number of doctors/pharmacies covered, number of areas), each a bullet starting with a verb, e.g. "Visited 10 doctors and clinics daily across 3 areas".
+- Use ONLY the numbers and facts they wrote, exactly. Never add, round or estimate a number. Nothing they did not say. [] if nothing fits.
+Return only JSON that matches the schema."""
+
+
+def write_numbers(text, context):
+    """The person's own numbers -> achievement and duty bullets. Returns (data, model) or (None, reason)."""
+    return _ask(json.dumps({"their_words": text[:1500], "cv": context}, ensure_ascii=False), NUMBERS_SYSTEM,
+                NUMBERS_SCHEMA, "cv_numbers", max_tokens=800, seconds=30)
 
 
 STT_URL = "https://api.groq.com/openai/v1/audio/transcriptions"

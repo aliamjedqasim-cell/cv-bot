@@ -33,7 +33,7 @@ from concurrent.futures import ThreadPoolExecutor
 import requests
 from flask import Flask, abort, request
 
-from cv_pdf import build_cv, edu_status_text, format_phone, is_field_role, is_student, nice_name
+from cv_pdf import build_cv, build_profile as cv_pdf_profile, edu_status_text, format_phone, is_field_role, is_student, nice_name
 import ai
 import extras
 import photos
@@ -108,6 +108,8 @@ SKILL_OPTIONS = [("com", "مهارات التواصل", "Strong Communication Sk
                  ("soc", "التسويق بالسوشيال ميديا", "Social Media Marketing"), ("det", "الدقة بالتفاصيل", "Detail-Oriented")]
 OTHER_LANGS = [("ku", "الكردية", "Kurdish"), ("tr", "التركية", "Turkish"), ("fa", "الفارسية", "Persian"),
                ("fr", "الفرنسية", "French"), ("de", "الألمانية", "German"), ("tk", "التركمانية", "Turkmen")]
+LANG_LEVELS = [(a, e) for a, e in ENGLISH_LEVELS if e != "none"]  # for languages other than English
+LANG_AR = {e.lower(): a for _, a, e in OTHER_LANGS}
 MULTI = {  # prefix -> (step, options, selection key, extras key, label when nothing is chosen)
     "c": ("customers", CUSTOMER_TYPES, "_cust_sel", None, "⏭️ تخطي"),
     "s": ("skills", SKILL_OPTIONS, "_skills_sel", "skills_extra", "✨ اختارلي أقوى المهارات"),
@@ -215,10 +217,18 @@ QUESTIONS = {  # step -> (question, optional?)
                "وبعدها اضغط <b>✔️ تم</b>", True),
     "english": ("شگد مستواك باللغة الإنگليزية؟ 🗣️", False),
     "other_langs": ("تعرف لغات ثانية غير العربي والإنگليزي؟\nاختار، أو اكتبها برسالة، وبعدها اضغط <b>✔️ تم</b>", True),
+    "numbers": ("📊 <b>أرقام حقيقية من شغلك</b> (اختياري، بس تفرق هواية عند الشركات):\n"
+                "• كم طبيب أو عيادة أو صيدلية كنت تزور (يومياً أو أسبوعياً)\n"
+                "• كم عميل صار يشتري منك أو تعامل وياك بشكل دائم\n"
+                "• نسبة تحقيق التارگت أو قيمة المبيعات\n"
+                "• كم منطقة أو محافظة غطيت\n\n"
+                "اكتب <b>الأرقام الحقيقية بس</b> 🙏 مثال: <i>أزور 10 أطباء يومياً، 15 عيادة صارت تشتري مني، حققت التارگت 110%</i>\n"
+                "وإذا ما عندك أرقام اضغط تخطي", True),
+    "lang_level": ("", True),
     "courses": ("عندك دورات أو شهادات؟ 📜\nاكتب كل وحدة بسطر\nمثال: <b>دورة مهارات البيع - 2023</b>\n\n"
                 "إذا ما عندك اضغط تخطي", True),
     "photo": ("📸 دز <b>صورتك الشخصية</b> (يفضّل رسمية وبخلفية هادئة).\n"
-              "أعدّلها وأضبطها إلك، وتگدر تدز <b>أكثر من صورة</b> وتختار الأحلى، أو تخلي الأصلية.\n"
+              "نعدّلها ونضبطها إلك، وتگدر تدز <b>أكثر من صورة</b> وتختار الأحلى، أو تخلي الأصلية.\n"
               "وإذا ما تريد صورة اضغط تخطي", True),
     # job ad
     "ad_company": ("🏢 <b>للشركات: طلب مندوبين أو موظفين</b>\n\n"
@@ -239,9 +249,9 @@ EDIT_FIELDS = [  # (label, group)
     ("الصورة", "photo"),
 ]
 EXP_GROUP = {"has_exp", "job_company", "job_role", "job_place", "job_duration", "duties", "more",
-             "customers", "products", "territory"}
+             "customers", "products", "territory", "numbers"}
 EDIT_CONTINUES = {"name": {"name_ok"}, "edu": {"specialty", "university", "edu_status"}, "exp": EXP_GROUP,
-                  "langs": {"other_langs"}, "field_extra": {"survey", "licence"}}
+                  "langs": {"other_langs", "lang_level"}, "field_extra": {"survey", "licence"}}
 EDIT_START = {"edu": "degree_level", "exp": "has_exp", "langs": "english"}
 AD_ORDER = ["ad_company", "ad_title", "ad_city", "ad_req", "ad_resp", "ad_contact"]
 HIGH_SCHOOL = "High School Diploma"
@@ -280,6 +290,7 @@ def cv_steps(d):
         steps.append("job_company")
         if field:
             steps += ["customers", "products", "territory"]
+        steps.append("numbers")
     if field:
         steps += ["survey", "licence"]
     return steps + ["skills", "english", "other_langs", "courses", "photo"]
@@ -288,7 +299,7 @@ def cv_steps(d):
 def next_step(sess, step):
     d = sess["data"]
     field = is_field_role(d)
-    after_jobs = "customers" if field else "skills"
+    after_jobs = "customers" if field else "numbers"
     if step == "name":
         return "name_ok" if d.get("_name_check") else "job_title"
     if step == "degree_level":
@@ -299,11 +310,15 @@ def next_step(sess, step):
         return "more" if len(d.get("experiences") or []) < MAX_JOBS else after_jobs
     if step == "more":
         return "job_company" if d.pop("_add_more", False) else after_jobs
+    if step == "numbers":
+        return "survey" if field else "skills"
+    if step in ("other_langs", "lang_level"):
+        return "lang_level" if langs_without_level(d) else "courses"
     return {
         "name_ok": "job_title", "name_en": "job_title", "job_title": "phone", "phone": "email", "email": "city",
         "city": "degree_level", "specialty": "university", "university": "edu_status", "edu_status": "has_exp",
         "job_company": "job_role", "job_role": "job_place", "job_place": "job_duration", "job_duration": "duties",
-        "customers": "products", "products": "territory", "territory": "survey", "survey": "licence",
+        "customers": "products", "products": "territory", "territory": "numbers", "survey": "licence",
         "licence": "skills", "skills": "english", "english": "other_langs", "other_langs": "courses",
         "courses": "photo", "photo": "confirm",
     }[step]
@@ -490,7 +505,7 @@ def cv_intro():
 
 TALK_INTRO = (
     "📝 <b>إنشاء سيرة ذاتية</b>\n\n"
-    "احچيلي عن نفسك <b>برسالة وحدة، بالعربي عادي وبدون ترتيب</b>:\n"
+    "احچيلنا عن نفسك <b>برسالة وحدة، بالعربي عادي وبدون ترتيب</b>:\n"
     "👤 اسمك، رقم هاتفك، ومحافظتك\n"
     "🎯 الوظيفة اللي تريدها\n"
     "🎓 دراستك: الشهادة، التخصص، الجامعة، وسنة التخرج أو المرحلة\n"
@@ -566,6 +581,11 @@ def missing_steps(d):
             steps.append("survey")
         if not d.get("licence") and "licence" not in asked:
             steps.append("licence")
+    if d.get("experiences") and not d.get("achievements") and "achievements" not in asked \
+            and not d.get("_numbers_done"):
+        steps.append("numbers")
+    if langs_without_level(d):
+        steps.append("lang_level")
     if not d.get("_photo_asked"):
         steps.append("photo")
     return steps
@@ -599,10 +619,20 @@ def apply_cv_data(d, r):
     if re.fullmatch(r"[^@\s]+@[^@\s]+\.[A-Za-z]{2,}", txt("email")):
         d["email"] = txt("email").lower()
     for key, field, limit in (("city", "city", 60), ("job_title", "job_title", 60), ("university", "university", 90),
-                              ("products", "products", 120), ("territory", "territory", 120)):
+                              ("territory", "territory", 120)):
         if en(f"{key}_en"):
             d[field] = en(f"{key}_en", limit)
             ar[field] = txt(f"{key}_ar")
+    # products: correct English names grouped by category, never Arabic words spelled in Latin letters
+    from_ar, how_ar = translate.product_items(txt("products_ar")) if has_ar(txt("products_ar")) else ([], "")
+    from_en = translate.product_items(txt("products_en"))[0] if txt("products_en") else []
+    if from_ar and how_ar == "dict":
+        items = from_ar  # every word they said is a known product: the dictionary is exact
+    else:
+        items = from_ar + [x for x in from_en if x.lower() not in {y.lower() for y in from_ar}]
+    if items:
+        d["products"] = translate.group_products(items)[:160]
+        ar["products"] = txt("products_ar")
     if d.get("job_title"):
         d["job_title"] = re.sub(r"(Representative|Specialist|Supervisor|Manager|Pharmacist)s\b", r"\1", d["job_title"])
     level = next((v for _, v in DEGREE_BUTTONS if v.lower() == txt("degree_level").lower()), None)
@@ -757,7 +787,8 @@ def choose_photo(chat_id, sess, kind, index):
 
 # ======================================================= AI conversation
 TALK_OPTIONAL = {  # asked only together with something else that is missing (never a question on its own)
-    "achievements": "🏆 إنجازاتك بالشغل إذا عندك، بالأرقام الحقيقية: مثلاً حققت التارگت بنسبة كذا، فتحت مناطق أو صيدليات جديدة، دربت مندوبين، أو ترقيت لمشرف",
+    "achievements": ("📊 أرقام حقيقية من شغلك إذا عندك: كم طبيب أو عيادة كنت تزور، كم عميل صار يشتري منك، "
+                     "نسبة تحقيق التارگت أو قيمة المبيعات، وكم منطقة غطيت"),
     "email": "✉️ إيميلك (الشركات تفضّل أكثر من وسيلة تواصل)",
 }
 TALK_ASK = {  # what is missing -> how the AI conversation asks for it (all in one message)
@@ -771,6 +802,7 @@ TALK_ASK = {  # what is missing -> how the AI conversation asks for it (all in o
     "experience": "💼 عندك خبرة شغل؟ إذا اي: وين، شنو كان شغلك، وشگد. وإذا ماكو اكتب <b>ماكو</b>",
     "english": "🇬🇧 مستوى الإنگليزي عندك (ممتاز، جيد جداً، جيد، متوسط، ضعيف)",
     "licence": "🚗 عندك إجازة سوق وسيارة؟",
+    "lang_level": "🗣️ شگد مستواك بـ{langs}؟ (ممتاز، جيد جداً، جيد، متوسط، مبتدئ)",
 }
 ESSENTIAL = ("name", "phone", "job_title", "city", "degree")
 CONFIRM_WORDS = {"تمام", "اوكي", "اوك", "ok", "okay", "صح", "صحيح", "كلشي صحيح", "كلشي تمام", "ارسل", "دز", "دزه",
@@ -800,6 +832,8 @@ def talk_missing(d, first_round):
             out.append("english")
         if is_field_role(d) and not d.get("licence"):
             out.append("licence")
+    if langs_without_level(d) and "lang_level" not in (d.get("_asked") or []):
+        out.append("lang_level")
     return out
 
 
@@ -981,7 +1015,7 @@ def handle_talk(chat_id, sess, msg, kind="text"):
         receive_photo(chat_id, sess, msg["photo"][-1]["file_id"] if msg.get("photo") else doc["file_id"])
         if not text:
             if not sess.get("talk") and not msg.get("media_group_id"):
-                send(chat_id, "هسه احچيلي عن نفسك (كتابة أو بصمة 🎤) 👆")
+                send(chat_id, "هسه احچيلنا عن نفسك (كتابة أو بصمة 🎤) 👆")
             return
     elif doc:
         data = download_file(doc["file_id"], max_bytes=10 * 1024 * 1024)
@@ -990,9 +1024,9 @@ def handle_talk(chat_id, sess, msg, kind="text"):
             send(chat_id, "📄 ما گدرنا نقرأ الملف 😅 دزه <b>PDF</b> أو <b>Word</b>، أو اكتب معلوماتك، أو دز بصمة 🎤")
             return
         kind = "file"
-        send(chat_id, "📄 وصلني السي في القديم، دا أقرأه...")
+        send(chat_id, "📄 وصلنا السي في القديم، دا نقرأه...")
     if len(text) < (2 if sess.get("talk") else 12):
-        send(chat_id, "احچيلي عن نفسك أكثر 🙏 اسمك، دراستك، شغلك، والوظيفة اللي تريدها.\n"
+        send(chat_id, "احچيلنا عن نفسك أكثر 🙏 اسمك، دراستك، شغلك، والوظيفة اللي تريدها.\n"
                       "🎤 أو دز بصمة صوت، أسهل.")
         return
     sess.setdefault("talk", []).append({"q": sess.pop("last_q", None), "a": text[:4000], "kind": kind})
@@ -1006,7 +1040,7 @@ def handle_talk(chat_id, sess, msg, kind="text"):
         if fields:
             apply_cv_data(d, convert_form(fields))
             d["_mt"] = True
-            send(chat_id, "✅ رتّبت معلوماتك. باقي كم سؤال صغير 👇")
+            send(chat_id, "✅ رتبنا معلوماتك. باقي كم سؤال صغير 👇")
         else:
             send(chat_id, "النظام عليه ضغط هسه 😅 راح نكمل وياك بأسئلة سريعة.")
         sess["fill"], sess["fill_total"] = True, len(missing_steps(d))
@@ -1024,15 +1058,25 @@ def handle_talk(chat_id, sess, msg, kind="text"):
         name = first_name(d)
         got = understood_line(d)
         question = ((f"✅ تمام{' ' + esc(name) if name else ''}، وصلتنا معلوماتك" + (f": {got}" if got else "") + ".\n\n")
-                    + ("باقي عندي بس هاي الشغلات، جاوب عليها <b>برسالة وحدة</b> (كتابة أو بصمة 🎤):\n\n" if len(todo) > 1
+                    + ("باقي عدنا بس هاي الشغلات، جاوب عليها <b>برسالة وحدة</b> (كتابة أو بصمة 🎤):\n\n" if len(todo) > 1
                        else "باقي شغلة وحدة 👇\n\n")
-                    + "\n".join(TALK_ASK[k] for k in todo))
+                    + "\n".join(TALK_ASK[k].format(langs="، ".join(lang_ar(x) for x in langs_without_level(d)))
+                                for k in todo))
         optional = [k for k in ("achievements", "email") if first_round and k not in (d.get("_asked") or [])
                     and ((k == "achievements" and d.get("experiences") and not d.get("achievements"))
                          or (k == "email" and not d.get("email")))]
         if optional:
             d["_asked"] = sorted(set(d["_asked"]) | set(optional))
             question += "\n\n<b>وحتى يصير السي في أقوى (اختياري):</b>\n" + "\n".join(TALK_OPTIONAL[k] for k in optional)
+        sess["last_q"] = question
+        send(chat_id, question)
+        return
+    if (d.get("experiences") and not d.get("achievements") and "achievements" not in (d.get("_asked") or [])
+            and sess.get("rounds", 0) < 3):  # one dedicated question: real numbers make a CV much stronger
+        sess["rounds"] = sess.get("rounds", 0) + 1
+        d["_asked"] = sorted(set(d.get("_asked") or []) | {"achievements"})
+        question = ("✅ تمام" + (f" {esc(first_name(d))}" if first_name(d) else "") + "، معلوماتك صارت كاملة تقريباً.\n\n"
+                    + QUESTIONS["numbers"][0].replace("وإذا ما عندك أرقام اضغط تخطي", "وإذا ما عندك أرقام اكتب <b>ماكو</b>"))
         sess["last_q"] = question
         send(chat_id, question)
         return
@@ -1043,7 +1087,7 @@ def handle_talk(chat_id, sess, msg, kind="text"):
     if rest and rest != ["photo"]:
         send(chat_id, "✅ تمام، باقي كم شغلة صغيرة بالأزرار 👇")
     elif rest == ["photo"]:
-        send(chat_id, "✅ تمام" + (f" {esc(first_name(d))}" if first_name(d) else "") + "، رتّبت كل معلوماتك 👌")
+        send(chat_id, "✅ تمام" + (f" {esc(first_name(d))}" if first_name(d) else "") + "، رتبنا كل معلوماتك 👌")
     go_next(chat_id, sess)
 
 
@@ -1089,6 +1133,7 @@ KEYBOARDS = {
     "edu_status": rows_of([ar for ar, _ in STAGE_BUTTONS], 2),
     "job_duration": rows_of([ar for ar, _ in DURATION_BUTTONS], 3),
     "english": rows_of([ar for ar, _ in ENGLISH_LEVELS], 3),
+    "lang_level": rows_of([ar for ar, _ in LANG_LEVELS], 3),
     "has_exp": [[YES_EXP], [NO_EXP]], "more": [[ADD_JOB], [DONE_JOBS]], "survey": [[YES_SURVEY, NO_SURVEY]],
     "licence": [[LIC_CAR], [LIC_ONLY], [LIC_NONE]], "name_ok": [[NAME_OK], [NAME_FIX]],
 }
@@ -1116,6 +1161,9 @@ def ask(chat_id, step):
     question, optional = QUESTIONS[step]
     if step == "name_ok":
         question = f"اسمك بالإنگليزي راح ينكتب هيچ:\n\n<b>{esc(d.get('full_name'))}</b>\n\nصحيح؟"
+    if step == "lang_level":
+        lang = (langs_without_level(d) or ["?"])[0]
+        question = f"🗣️ شگد مستواك بـ<b>{esc(lang_ar(lang))}</b>؟\nحتى ينكتب بالسي في بشكل صحيح"
     if sess.get("mode") == "cv":
         jobs = len(d.get("experiences") or [])
         if step == "job_company" and jobs:
@@ -1165,6 +1213,16 @@ def go_next(chat_id, sess):
         show_summary(chat_id, sess)
     else:
         ask(chat_id, nxt)
+
+
+def langs_without_level(d):
+    """Other languages written without a level (e.g. just 'Turkish'), not skipped by the person."""
+    skip = set(d.get("_lang_skip") or [])
+    return [x for x in d.get("other_languages") or [] if ":" not in x and x not in skip]
+
+
+def lang_ar(name):
+    return LANG_AR.get(name.split(":")[0].strip().lower(), name.split(":")[0].strip())
 
 
 def refresh_languages(d):
@@ -1246,7 +1304,10 @@ def summary_text(sess):
     other_ar = ar.get("other_languages")
     if not other_ar:
         names = {en.lower(): a for _, a, en in OTHER_LANGS}
-        other_ar = [names.get(x.split(":")[0].strip().lower(), x) for x in d.get("other_languages") or []]
+        lv = {e.lower(): a for a, e in LANG_LEVELS}
+        other_ar = [names.get(x.split(":")[0].strip().lower(), x.split(":")[0])
+                    + (f" ({lv.get(x.split(':', 1)[1].strip().lower(), x.split(':', 1)[1].strip())})" if ":" in x else "")
+                    for x in d.get("other_languages") or []]
     langs_ar += other_ar
     lines.append(line("🗣️ <b>اللغات:</b>", langs_ar, d.get("languages")))
     if d.get("courses"):
@@ -1347,6 +1408,30 @@ def translate_lines(d, raw, limit, width):
     return out
 
 
+def add_numbers(d, raw):
+    """The person's own numbers -> CV bullets: results go to Key Achievements, activity numbers (visits per day,
+    areas covered) to the latest job's duties. A bullet with a number they never wrote is dropped."""
+    said = set(re.findall(r"\d+", raw.translate(AR_DIGITS)))
+    data = None
+    if ai.enabled():
+        context = {"job_title": d.get("job_title"), "jobs": [{"company": j.get("company"), "title": j.get("title")}
+                                                              for j in d.get("experiences") or []]}
+        data, _ = ai.write_numbers(raw, context)
+    if data:
+        ok = lambda x: isinstance(x, str) and x.strip() and not has_ar(x) and set(re.findall(r"\d+", x)) <= said
+        results = [clean(x)[:200] for x in data.get("achievements_en") or [] if ok(x)][:4]
+        activity = [clean(x)[:170] for x in data.get("duties_en") or [] if ok(x)][:2]
+    else:
+        results, activity = translate_lines(d, raw, 4, 200), []
+    if results:
+        d["achievements"] = (d.get("achievements") or []) + results
+        d.setdefault("_ar", {})["achievements"] = [clean(x) for x in raw.splitlines() if clean(x)][:4]
+    if activity and d.get("experiences"):
+        job = d["experiences"][0]
+        job["duties"] = activity + [x for x in job.get("duties") or [] if x not in activity]
+    return bool(results or activity)
+
+
 def add_extras(chat_id, sess, raw, prefix):
     """Free-typed skills / languages while the multi-select buttons are showing."""
     d = sess["data"]
@@ -1435,6 +1520,10 @@ def handle_cv_answer(chat_id, sess, msg):
             d[step] = ""
         elif step == "courses":
             d["courses"] = []
+        elif step == "numbers":
+            d["_numbers_done"] = True
+        elif step == "lang_level":
+            d.setdefault("_lang_skip", []).extend(langs_without_level(d)[:1])
         go_next(chat_id, sess)  # skipped duties -> the CV adds strong standard duties
         return
 
@@ -1571,7 +1660,7 @@ def handle_cv_answer(chat_id, sess, msg):
     elif step == "products":
         en, how = products_en(text)
         note(d, how)
-        d["products"] = tidy(en)[:120]
+        d["products"] = en[:160]
         remember(d, "products", text)
     elif step == "territory":
         en, how = place_en(text)
@@ -1596,6 +1685,24 @@ def handle_cv_answer(chat_id, sess, msg):
             return
         d["english"] = en
         remember(d, "english", text)
+    elif step == "numbers":
+        d["_numbers_done"] = True
+        if norm(text) in ("ماكو", "لا", "ما عندي", "ماعندي", "لا يوجد", "no", "none") or (
+                not re.search(r"\d", text.translate(AR_DIGITS)) and len(text) < 25):  # no real numbers in it
+            go_next(chat_id, sess)
+            return
+        tg("sendChatAction", chat_id=chat_id, action="typing")
+        add_numbers(d, raw)
+    elif step == "lang_level":
+        level = pick(LANG_LEVELS, text)
+        if not level:
+            send(chat_id, "اختار المستوى من الأزرار 👇", keyboard=KEYBOARDS["lang_level"] + [[SKIP]])
+            return
+        langs = d.get("other_languages") or []
+        todo = langs_without_level(d)
+        if todo:
+            langs[langs.index(todo[0])] = f"{todo[0]}: {level}"
+            refresh_languages(d)
     elif step == "courses":
         d["courses"] = [tidy(c) for c in translate_lines(d, raw, 8, 90)]
         remember(d, "courses", [clean(x) for x in raw.splitlines() if clean(x)][:8])
@@ -2783,6 +2890,7 @@ def self_test():
             d["_ai"] = True
         out.append(f"read: name={d.get('full_name')}, title={d.get('job_title')}, city={d.get('city')}, "
                    f"jobs={len(d.get('experiences') or [])}, still to ask={missing_steps(d)}")
+        out.append(f"cv summary starts: {' '.join(cv_pdf_profile(d).split()[:12])}... | products: {d.get('products')}")
         d["_photo_asked"] = True
         refresh_languages(d)
         pdf = build_cv(latinize(d), None)

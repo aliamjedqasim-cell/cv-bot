@@ -70,6 +70,10 @@ def build_ats_cv(d):
                 block.append(Paragraph(esc(meta), S["meta"]))
             block += [Paragraph(esc(x), S["bullet"], bulletText="•") for x in job_duties(d, e, target)]
             out.append(KeepTogether(block + [Spacer(1, 4)]))
+        reach = [(label, value) for label, value in (
+            ("Customers Covered", ", ".join(d.get("customers") or [])), ("Products / Specialties", d.get("products")),
+            ("Territory Covered", d.get("territory"))) if value]
+        out += [Paragraph(f"<b>{label}:</b> {esc(value)}", S["body"]) for label, value in reach]
     achievements = [_sentence(x) for x in d.get("achievements") or [] if _sentence(x)]
     if achievements:
         out += _section("Key Achievements") + [Paragraph(esc(x), S["bullet"], bulletText="•") for x in achievements]

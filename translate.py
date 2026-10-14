@@ -161,21 +161,58 @@ TITLES = _table({
 })
 
 PRODUCTS = _table({
-    "فلر|فلرات|فيلر": "Dermal Fillers", "بوتوكس": "Botox", "ابر|حقن|سرنجات|محاقن": "Medical Needles & Syringes",
+    "فلر|فلرات|فيلر|فيلرات|حشوات|ماده الفلر": "Dermal Fillers", "بوتوكس|بوتكس|بوتكوس|البوتوكس": "Botulinum Toxin",
+    "ابر|حقن|سرنجات|محاقن|ابر طبيه|ابر تجميل|ابر تجميليه|ابر الميزو": "Medical Needles & Syringes",
+    "كانيولا|كانيولات|كانولا": "Cannulas",
+    "ميزو|ميزوثيرابي|ميزوثرابي|ميزوثيرابى|الميزو": "Mesotherapy",
+    "نضاره|النضاره|ابر النضاره|سكن بوستر|سكين بوستر|معززات البشره|محفزات البشره": "Skin Boosters",
+    "بروفايلو|بروفايلو": "Profhilo", "بولي نيوكليوتيد|بوليكوليك|سالمون|ابر السالمون|حمض السالمون": "Polynucleotides (PN)",
+    "اذابه دهون|اذابة الدهون|ابر اذابه الدهون|ليبوليتك|ليبولاب|حقن التنحيف": "Lipolytic Injections",
+    "اكزوزوم|اكسوزوم|اكزوسوم": "Exosomes", "كولاجين|محفزات الكولاجين": "Collagen Stimulators",
+    "هيالورونيك|هيالورونك|هيالورونيك اسيد": "Hyaluronic Acid Products", "تقشير|بيلنك|تقشير كيميائي": "Chemical Peels",
+    "واقي شمس|واقيات شمس": "Sunscreens", "مستلزمات تجميل|مستلزمات تجميليه": "Aesthetic Supplies",
     "مضادات حيويه|مضاد حيوي": "Antibiotics", "ادويه القلب|قلب|القلب": "Cardiovascular Medicines",
     "ادويه السكري|سكري|السكري": "Diabetes Medicines", "ادويه الضغط|ضغط": "Antihypertensives",
-    "مستحضرات تجميل|تجميل|مستحضرات تجميليه": "Cosmetics", "مستلزمات طبيه": "Medical Supplies",
+    "مستحضرات تجميل|تجميل|مستحضرات تجميليه|كوزمتك": "Cosmetics", "مستلزمات طبيه|مستهلكات طبيه": "Medical Supplies",
     "اجهزه طبيه": "Medical Devices", "فيتامينات": "Vitamins", "مكملات غذائيه|مكملات": "Nutritional Supplements",
-    "جلديه|ادويه جلديه": "Dermatology Products", "العنايه بالبشره|عنايه بشره": "Skin Care",
+    "جلديه|ادويه جلديه": "Dermatology Products", "العنايه بالبشره|عنايه بشره|عنايه بالبشره|سكن كير": "Skin Care",
     "حليب اطفال": "Infant Formula", "ادويه|الادويه": "Pharmaceuticals", "مسكنات": "Analgesics",
     "مستلزمات اسنان|مواد اسنان": "Dental Supplies", "عدسات": "Contact Lenses", "مغذيات|محاليل": "IV Solutions",
     "مختبرات|مواد مختبريه|عدد مختبريه": "Laboratory Supplies", "ادويه نسائيه|نسائيه": "Gynecology Products",
     "ادويه اطفال|اطفال": "Pediatric Medicines", "عظام|ادويه عظام": "Orthopedic Products",
     "عيون|ادويه عيون": "Ophthalmic Products", "اعصاب|ادويه اعصاب": "Neurology Medicines",
-    "معجون اسنان": "Oral Care", "شامبو|العنايه بالشعر": "Hair Care", "ميزوثيرابي": "Mesotherapy",
-    "خيوط تجميليه|خيوط": "PDO Threads", "بلازما": "PRP Products", "ليزر|اجهزه ليزر": "Laser Devices",
+    "معجون اسنان": "Oral Care", "شامبو|العنايه بالشعر": "Hair Care",
+    "خيوط تجميليه|خيوط|خيوط شد": "PDO Threads", "بلازما": "PRP Products", "ليزر|اجهزه ليزر": "Laser Devices",
 })
 
+# product (English) -> its group in the CV, so HR reads "Aesthetic Injectables (Dermal Fillers, ...)"
+PRODUCT_GROUPS = {
+    "Aesthetic Injectables": ["Dermal Fillers", "Botulinum Toxin", "Mesotherapy", "Skin Boosters", "Profhilo",
+                              "Polynucleotides (PN)", "Lipolytic Injections", "Exosomes", "Collagen Stimulators",
+                              "Hyaluronic Acid Products", "PRP Products", "PDO Threads"],
+    "Medical Consumables": ["Medical Needles & Syringes", "Cannulas", "Medical Supplies", "IV Solutions",
+                            "Laboratory Supplies", "Dental Supplies", "Aesthetic Supplies"],
+    "Pharmaceuticals": ["Antibiotics", "Cardiovascular Medicines", "Diabetes Medicines", "Antihypertensives",
+                        "Analgesics", "Pediatric Medicines", "Neurology Medicines", "Gynecology Products",
+                        "Ophthalmic Products", "Orthopedic Products", "Dermatology Products", "Vitamins",
+                        "Nutritional Supplements", "Infant Formula"],
+    "Skin Care & Cosmetics": ["Skin Care", "Cosmetics", "Sunscreens", "Chemical Peels", "Hair Care", "Oral Care",
+                              "Contact Lenses"],
+    "Medical Devices": ["Laser Devices"],
+}
+_GROUP_OF = {item: group for group, items in PRODUCT_GROUPS.items() for item in items}
+_PRODUCT_ALIASES = {  # English words the AI or the person may use -> the standard name
+    "botox": "Botulinum Toxin", "botulinum toxin": "Botulinum Toxin", "botulinum toxin (botox)": "Botulinum Toxin",
+    "filler": "Dermal Fillers", "fillers": "Dermal Fillers", "dermal filler": "Dermal Fillers",
+    "dermal fillers": "Dermal Fillers", "ha fillers": "Dermal Fillers", "meso": "Mesotherapy",
+    "mesotherapy": "Mesotherapy", "mesotherapy products": "Mesotherapy", "skin booster": "Skin Boosters",
+    "skin boosters": "Skin Boosters", "profhilo": "Profhilo", "threads": "PDO Threads", "pdo threads": "PDO Threads",
+    "prp": "PRP Products", "needles": "Medical Needles & Syringes", "syringes": "Medical Needles & Syringes",
+    "cannula": "Cannulas", "cannulas": "Cannulas", "antibiotics": "Antibiotics", "skincare": "Skin Care",
+    "skin care": "Skin Care", "cosmetics": "Cosmetics", "vitamins": "Vitamins", "supplements": "Nutritional Supplements",
+    "fat dissolvers": "Lipolytic Injections", "lipolytic injections": "Lipolytic Injections",
+    "polynucleotides": "Polynucleotides (PN)", "exosomes": "Exosomes",
+}
 BRANDS = _table({
     "بيونير|بايونير": "Pioneer", "حكمه|الحكمه": "Hikma", "جلفار": "Julphar", "سانوفي": "Sanofi",
     "نوفارتس|نوفارتيس": "Novartis", "فايزر": "Pfizer", "باير": "Bayer", "روش": "Roche",
@@ -462,12 +499,84 @@ def title_en(text):
     return _phrase(text, TITLES)
 
 
-def products_en(text):
+def _latin_products(text):
+    """'Aesthetic Injectables (Fillers, Botox); Antibiotics' -> ['Dermal Fillers', 'Botulinum Toxin', 'Antibiotics']."""
+    out = []
+    for seg in re.split(r"\s*;\s*|\n", clean(text)):
+        m = re.match(r"^\s*([A-Za-z &]+?)\s*[:(]\s*(.*?)\)?\s*$", seg)
+        if m and m.group(1).strip() in PRODUCT_GROUPS:
+            seg = m.group(2)
+        for x in re.split(r"\s*,\s*|\s+and\s+", seg):
+            x = x.strip(" .")
+            if x:
+                out.append(_PRODUCT_ALIASES.get(x.lower(), x.title() if x.islower() else x))
+    return out
+
+
+def product_items(text):
+    """Products the person named -> standard English names. Arabic words are looked up (phrase, then word by
+    word), then machine-translated; never spelled out in Latin letters (HR can't read «Falarat Botokes»).
+    Returns (items, how)."""
+    items, how = [], "dict"
     if not has_ar(text):
-        return clean(text), "latin"
-    results = [_phrase(p, PRODUCTS) for p in _parts(text)]
-    how = "dict" if all(h == "dict" for _, h in results) else "mt"
-    return ", ".join(r for r, _ in results), how
+        return _latin_products(text), "latin"
+    for part in _parts(text):
+        if not has_ar(part):
+            items += _latin_products(part)
+            continue
+        hit = _lookup(PRODUCTS, part)
+        if hit:
+            items.append(hit)
+            continue
+        words, i, rest = norm(part).split(), 0, []
+        while i < len(words):  # longest known phrase first: "ابر النضاره", then single words
+            for n in (3, 2, 1):
+                chunk = " ".join(words[i:i + n])
+                hit = len(words[i:i + n]) == n and _lookup(PRODUCTS, chunk)
+                if hit:
+                    items.append(hit)
+                    i += n
+                    break
+            else:
+                if not has_ar(words[i]):  # a brand written in English inside Arabic text: keep it
+                    items.append(words[i] if not words[i].islower() else words[i].title())
+                elif words[i] not in ("و", "مع", "منتجات", "منتوجات", "مواد", "ماده", "انواع", "شركه"):
+                    rest.append(words[i])
+                i += 1
+        if rest:
+            res = mt(" ".join(rest))
+            if res and not has_ar(res):
+                items.append(_PRODUCT_ALIASES.get(res.strip().lower(), res.strip().rstrip(".").title()))
+                how = "mt"
+            else:
+                how = "partial"
+    seen, out = set(), []
+    for x in items:
+        if x and x.lower() not in seen:
+            seen.add(x.lower())
+            out.append(x)
+    return out, how
+
+
+def group_products(items):
+    """['Dermal Fillers', 'Botulinum Toxin', 'Antibiotics'] ->
+    'Aesthetic Injectables (Dermal Fillers, Botulinum Toxin); Pharmaceuticals (Antibiotics)'."""
+    groups, loose = {}, []
+    for x in items:
+        g = _GROUP_OF.get(x)
+        if g:
+            groups.setdefault(g, []).append(x)
+        elif x not in loose:
+            loose.append(x)
+    parts = [f"{g} ({', '.join(v)})" for g, v in groups.items()]
+    return "; ".join(parts + ([", ".join(loose)] if loose else []))
+
+
+def products_en(text):
+    items, how = product_items(text)
+    if not has_ar(text):
+        how = "latin"
+    return group_products(items), how
 
 
 def _company_words(text, allow_translit):

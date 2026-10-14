@@ -255,39 +255,50 @@ def _companies(d):
     return ", ".join(names[:-1]) + " and " + names[-1]
 
 
+def _study_line(d):
+    """The studies as a short supporting sentence (experience comes first)."""
+    if d.get("degree") in (None, "", "High School Diploma") and not d.get("specialty"):
+        return "Holds a High School Diploma." if d.get("degree") == "High School Diploma" else ""
+    what = d.get("degree") or f"a degree in {_field(d)}"
+    if is_student(d):
+        return f"Currently studying {_field(d)} alongside work."
+    return f"Holds a {what}." if not what.lower().startswith(("a ", "an ")) else f"Holds {what}."
+
+
 def build_profile(d):
     if d.get("profile_en"):  # written by the AI from the applicant's own facts
         return d["profile_en"]
     field = _field(d)
     title = d.get("job_title") or "Sales Representative"
     stage = "student" if is_student(d) else "graduate"
-    exp = d.get("has_experience") and _companies(d)
-    if not is_field_role(d):
-        if exp:
-            return (f"Highly motivated and dedicated {title} with hands-on professional experience at {_companies(d)}. "
-                    f"Known for accuracy, strong work ethic and excellent communication with colleagues, customers and "
-                    f"healthcare professionals. A {field} {stage} who learns fast, adapts quickly and is fully "
-                    f"committed to delivering high-quality work and continuous professional growth.")
-        return (f"Ambitious, dedicated and highly motivated {field} {stage} with a solid academic foundation, "
-                f"excellent communication skills and a strong passion for the healthcare sector. Quick to learn, "
-                f"detail-oriented and ready to make an immediate, meaningful contribution to a professional team. "
-                f"Highly adaptable and committed to continuous professional growth.")
-    domain = "pharmaceutical and medical sales" if is_medical(d) else "sales and business development"
-    if exp:
-        reach = ""
-        if d.get("customers"):
-            reach = f", serving {_join([c.lower() for c in d['customers']])}"
+    jobs = [e for e in d.get("experiences") or [] if e.get("company")] if d.get("has_experience") else []
+    if jobs:  # experience first, studies last
+        first = jobs[0]
+        role = first.get("title") or title
+        dur = f"{first['duration']} of " if first.get("duration") else ""
+        lead = f"{role} with {dur}hands-on experience at {_companies(d)}"
+        if is_field_role(d):
+            if d.get("products"):
+                groups = re.findall(r"(?:^|; )([A-Za-z &]+?) \(", d["products"])
+                lead += f", promoting {_join([g.lower() for g in groups]) if groups else d['products']}"
+            if d.get("customers"):
+                lead += f" to {_join([c.lower() for c in d['customers']])}"
             if d.get("territory"):
-                reach += f" across {d['territory']}"
-        return (f"Highly motivated and results-driven {title} with hands-on field experience at {_companies(d)}{reach}. "
-                f"Skilled in building strong, long-lasting relationships with clients and key accounts, delivering "
-                f"persuasive product presentations, negotiating effectively and driving sales toward daily and monthly "
-                f"targets. A {field} {stage} who learns fast, adapts quickly and is fully committed to "
-                f"continuous professional growth.")
-    return (f"Ambitious, energetic and highly motivated {field} {stage} with excellent communication, persuasion "
-            f"and negotiation skills and a strong passion for {domain}. Quick to learn products and markets, "
-            f"confident in dealing with customers, and ready to make an immediate, meaningful contribution to a "
-            f"dynamic sales team. Highly adaptable, target-oriented and committed to continuous professional growth.")
+                lead += f" across {d['territory']}"
+            middle = ("Skilled in building trusted relationships with doctors and key accounts, delivering clear "
+                      "product presentations, negotiating and closing deals, and working steadily toward monthly targets.")
+        else:
+            middle = "Known for accuracy, reliability and clear communication with colleagues, customers and healthcare professionals."
+        aim = f"Seeking to grow as a {title}."
+        return " ".join(x for x in (lead + ".", middle, _study_line(d), aim) if x)
+    if not is_field_role(d):
+        return (f"{field} {stage} with a solid academic foundation, clear communication and a strong interest in the "
+                f"healthcare sector. Quick to learn, detail-oriented and ready to contribute to a professional team "
+                f"as a {title}.")
+    domain = "pharmaceutical and medical sales" if is_medical(d) else "sales and business development"
+    return (f"{field} {stage} with strong communication, persuasion and negotiation skills and a clear interest in "
+            f"{domain}. Quick to learn products and markets, confident with customers, and ready to start as a "
+            f"{title} in a target-driven field team.")
 
 
 def build_objective(d):
