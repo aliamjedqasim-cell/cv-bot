@@ -37,7 +37,7 @@ S = {
 
 
 def _contact_line(d):
-    parts = [format_phone(d.get("phone")), d.get("email"), f"Iraq / {d['city']}" if d.get("city") else ""]
+    parts = [format_phone(d.get("phone")), d.get("email"), (d['city'] if 'iraq' in d['city'].lower() else f"{d['city']}, Iraq") if d.get('city') else ""]
     return "  |  ".join(esc(p) for p in parts if p)
 
 

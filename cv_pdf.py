@@ -49,6 +49,8 @@ INK = HexColor("#111214")
 BODY = HexColor("#1F2226")
 RULE = HexColor("#2B2D31")
 PLACEHOLDER = HexColor("#3A3C43")
+MUTED = HexColor("#555A62")      # company, dates, second lines
+HAIRLINE = HexColor("#C9CDD3")   # the thin line under each section heading
 
 PAGE_W, PAGE_H = A4
 HEADER_H = 193
@@ -158,9 +160,12 @@ def _styles(f=1.0):
         "body": st("body", "Body", 11, 14.6, BODY, leftIndent=2),
         "bullet": st("bullet", "Body", 11, 14.6, BODY, leftIndent=13, bulletIndent=2,
                      bulletFontName="Body-Bold", bulletFontSize=11 * f),
+        "summary": st("summary", "Body", 11, 15, BODY, leftIndent=0, alignment=4),
         "job": st("job", "Body-Bold", 13.5, 17),
-        "dur": st("dur", "Body-Bold", 13.5, 17, alignment=2),
+        "dur": st("dur", "Body", 11.5, 17, MUTED, alignment=2),
+        "org": st("org", "Body-Bold", 11.5, 15, MUTED),
         "edu": st("edu", "Body-Bold", 13, 17),
+        "edu2": st("edu2", "Body", 11.5, 15, MUTED),
         "role": st("role", "Body", 12, 15, HexColor("#3A3D42")),
         "kv": st("kv", "Body", 11, 14.6, BODY, leftIndent=2),
         "lang": st("lang", "Body", 12, 15, BODY, leftIndent=2),
@@ -398,8 +403,37 @@ class Rule(Flowable):
         self.canv.line(0, self.sa, self.aw, self.sa)
 
 
+class SectionHead(Flowable):
+    """PROFESSIONAL EXPERIENCE: spaced capitals, a short dark bar on a thin full-width line."""
+    def __init__(self, title, f=1.0):
+        super().__init__()
+        self.title, self.f, self.size = title.upper(), f, 11.6 * f
+
+    def wrap(self, aw, ah):
+        self.aw = aw
+        return aw, self.size + 9 * self.f
+
+    def draw(self):
+        c, f = self.canv, self.f
+        spacing = 1.15 * f
+        t = c.beginText()
+        t.setFont("Head-Bold", self.size)
+        t.setCharSpace(spacing)
+        t.setFillColor(INK)
+        t.setTextOrigin(0, 7.5 * f)
+        t.textOut(self.title)
+        c.drawText(t)
+        width = c.stringWidth(self.title, "Head-Bold", self.size) + spacing * (len(self.title) - 1)
+        c.setStrokeColor(HAIRLINE)
+        c.setLineWidth(0.7)
+        c.line(0, 1.2 * f, self.aw, 1.2 * f)
+        c.setStrokeColor(INK)
+        c.setLineWidth(2 * f)
+        c.line(0, 1.2 * f, min(width, 54 * f), 1.2 * f)
+
+
 def section(title, s):
-    return [Rule(s["f"]), Paragraph(esc(title), s["h"]), Spacer(1, 3 * s["f"])]
+    return [Spacer(1, 7 * s["f"]), SectionHead(title, s["f"]), Spacer(1, 5 * s["f"])]
 
 
 def _grid_table(rows, col_widths):
@@ -522,7 +556,7 @@ def _draw_first_page(d, photo):
 
         # contact row
         row_y = PAGE_H - HEADER_H - 23
-        items = [("phone", format_phone(d.get("phone")), 66), ("mail", d.get("email"), 237), ("pin", f"Iraq / {d.get('city')}" if d.get("city") else "", 436)]
+        items = [("phone", format_phone(d.get("phone")), 66), ("mail", d.get("email"), 237), ("pin", (d["city"] if "iraq" in d["city"].lower() else f"{d['city']}, Iraq") if d.get("city") else "", 436)]
         items = [it for it in items if it[1]]
         if len(items) < 3:  # spread the remaining items evenly
             step = CONTENT_W / max(len(items), 1)
@@ -569,27 +603,27 @@ def core_skills(d, max_skills=12):
 # ---------------------------------------------------------------------- story
 def _story(d, s, max_skills=12, duty_targets=(4, 3)):
     f = s["f"]
-    out = [KeepTogether(section("Professional Summary", s)[1:] + [  # the contact row already draws a rule
-        Paragraph(esc(build_profile(d)), s["body"]), Spacer(1, 4 * f)])]
+    out = [KeepTogether(section("Professional Summary", s)[1:] + [
+        Paragraph(esc(build_profile(d)), s["summary"]), Spacer(1, 2 * f)])]
 
     exps = [e for e in d.get("experiences") or [] if e.get("company")]
     if d.get("has_experience") and exps:
         target = duty_targets[0] if len(exps) == 1 else duty_targets[1]  # standard duties are topped up to this
         for i, e in enumerate(exps):
-            plain = e["company"] + (f" | {e['location']}" if e.get("location") else "")
+            role = title_case(e.get("title") or "")
+            org = e["company"] + (f"  |  {e['location']}" if e.get("location") else "")
+            first_line = role or org
             dur = _duration(e.get("duration"))
-            dur_plain = f"( {dur} )" if dur else ""
-            dur_w = pdfmetrics.stringWidth(dur_plain, "Body-Bold", s["dur"].fontSize) + 8 if dur_plain else 0
+            dur_w = pdfmetrics.stringWidth(dur, "Body", s["dur"].fontSize) + 10 if dur else 0
             head_w = CONTENT_W - dur_w
-            block = section("Professional Experience", s) if i == 0 else []  # heading stays with 1st job
-            block += [Spacer(1, 5 * f), _grid_table(
-                [[_one_line(esc(plain), plain, s["job"], head_w - 6), Paragraph(esc(dur_plain), s["dur"])]],
+            block = section("Professional Experience", s) if i == 0 else [Spacer(1, 4 * f)]  # heading stays with 1st job
+            block += [_grid_table(
+                [[_one_line(esc(first_line), first_line, s["job"], head_w - 6), Paragraph(esc(dur), s["dur"])]],
                 [head_w, CONTENT_W - head_w] if dur_w else [CONTENT_W - 1, 1],
-            ), Spacer(1, 1 * f)]
-            if e.get("title"):
-                block += [Paragraph(esc(title_case(e["title"])), s["role"]), Spacer(1, 2 * f)]
-            else:
-                block.append(Spacer(1, 2 * f))
+            )]
+            if role:
+                block += [_one_line(esc(org), org, s["org"], CONTENT_W - 4, 9.5)]
+            block.append(Spacer(1, 3 * f))
             block += [Paragraph(esc(x), s["bullet"], bulletText="•") for x in job_duties(d, e, target)]
             out.append(KeepTogether(block))
         highlights = []
@@ -606,7 +640,7 @@ def _story(d, s, max_skills=12, duty_targets=(4, 3)):
     achievements = [_sentence(x) for x in d.get("achievements") or [] if _sentence(x)][:5]
     if achievements:  # only results the applicant stated
         out.append(KeepTogether(section("Key Achievements", s) + [
-            Paragraph(esc(x), s["bullet"], bulletText="•") for x in achievements] + [Spacer(1, 4 * f)]))
+            Paragraph(esc(x), s["bullet"], bulletText="•") for x in achievements] + [Spacer(1, 2 * f)]))
 
     skills = core_skills(d, max_skills)
     if skills:
@@ -616,26 +650,30 @@ def _story(d, s, max_skills=12, duty_targets=(4, 3)):
         rows = []
         for r in range(per_col):
             rows.append([Paragraph(esc(col[r]), s["bullet"], bulletText="•") if r < len(col) else "" for col in columns])
-        out.append(KeepTogether(section("Core Skills", s) + [_grid_table(rows, [CONTENT_W / 3] * 3), Spacer(1, 4 * f)]))
+        out.append(KeepTogether(section("Core Skills", s) + [_grid_table(rows, [CONTENT_W / 3] * 3), Spacer(1, 2 * f)]))
 
-    edu_plain = " | ".join(str(x).strip() for x in [d.get("university"), d.get("degree"), edu_status_text(d)] if x)
-    if edu_plain:
-        out.append(KeepTogether(section("Education", s) + [
-            _one_line(esc(edu_plain), edu_plain, s["edu"], CONTENT_W - 4, 10), Spacer(1, 4 * f)]))
+    degree = str(d.get("degree") or "").strip()
+    edu_second = "  |  ".join(str(x).strip() for x in [d.get("university"), edu_status_text(d)] if x)
+    if degree or edu_second:
+        first_line, second = (degree, edu_second) if degree else (edu_second, "")
+        rows = [_one_line(esc(first_line), first_line, s["edu"], CONTENT_W - 4, 10)]
+        if second:
+            rows.append(_one_line(esc(second), second, s["edu2"], CONTENT_W - 4, 9.5))
+        out.append(KeepTogether(section("Education", s) + rows + [Spacer(1, 2 * f)]))
 
     courses = [c for c in d.get("courses") or [] if c][:8]
     if courses:
         out.append(KeepTogether(section("Courses & Certifications", s) + [
-            Paragraph(esc(c), s["bullet"], bulletText="•") for c in courses] + [Spacer(1, 4 * f)]))
+            Paragraph(esc(c), s["bullet"], bulletText="•") for c in courses] + [Spacer(1, 2 * f)]))
 
     extra_info = additional_info(d)
     if extra_info:
         out.append(KeepTogether(section("Additional Information", s) + [
-            Paragraph(esc(x), s["bullet"], bulletText="•") for x in extra_info] + [Spacer(1, 4 * f)]))
+            Paragraph(esc(x), s["bullet"], bulletText="•") for x in extra_info] + [Spacer(1, 2 * f)]))
 
     langs = [x for x in d.get("languages") or [] if x][:6]
     if langs:
-        out.append(KeepTogether(section("Languages", s) + [Paragraph(esc(x), s["lang"]) for x in langs]))
+        out.append(KeepTogether(section("Languages", s) + [Paragraph("&nbsp;&nbsp;&nbsp;•&nbsp;&nbsp;&nbsp;".join(esc(x) for x in langs), s["lang"])]))
     return out
 
 

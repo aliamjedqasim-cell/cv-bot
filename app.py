@@ -122,27 +122,27 @@ COMPANY_EN = "Masar Medical Careers"
 PARTNER = env("PARTNER_NAME", "قناة مصطفى أمير")  # the channel we belong to (can be changed on Render)
 BOT_NAME = "مسار للتوظيف الطبي | Masar"
 
-MENU = [
-    [{"text": "📝 سوّي سيرتك الذاتية CV", "callback_data": "m:cv"}],
-    [{"text": "🎓 كورسات المقابلات والمندبة", "callback_data": "m:courses"}],
-    [{"text": "🏢 للشركات: اطلب مندوبين أو موظفين", "callback_data": "m:ad"}],
-    [{"text": "💬 تواصل ويانا", "callback_data": "m:contact"}],
+MENU = [  # three choices only
+    [{"text": "📝 سيرة ذاتية احترافية + كورس المقابلات", "callback_data": "m:cv"}],
+    [{"text": "🏢 للشركات: انشر إعلان وظيفة", "callback_data": "m:ad"}],
+    [{"text": "💬 تواصل معنا", "callback_data": "m:contact"}],
 ]
 WELCOME = (
     f"أهلاً وسهلاً بيك بـ <b>{COMPANY}</b> 🩺\n"
-    f"شركة متخصصة بالتوظيف بالقطاع الطبي والمبيعات، تابعة لـ <b>{PARTNER}</b> 📢\n\n"
-    "<b>شنو نقدّملك:</b>\n"
-    "📝 <b>نصمملك سيرة ذاتية CV احترافية بالإنگليزي</b>، ويراجعها ويدققها فريقنا: "
-    "احچي عن نفسك بالعربي، أو دز بصمة صوت 🎤\n"
-    "🤝 <b>نرشّح السي في مالتك</b> للشركات اللي تطلب مندوبين وموظفين وخدمات\n"
-    "🎓 <b>كورسات</b> بالمقابلات الوظيفية والمندبة الطبية\n"
-    "🏢 وللشركات: <b>نوفرلكم مندوبين وموظفين</b>\n\n"
-    "اختار شنو تحتاج 👇\n\n"
+    f"شركة توظيف بالقطاع الطبي والمبيعات، تابعة لـ <b>{PARTNER}</b> 📢\n\n"
+    "<b>ويانا تگدر:</b>\n"
+    "📝 تسوي <b>سيرة ذاتية احترافية</b>، وتتعلم شلون تنجح بالمقابلة وشلون تلقى وظيفة مناسبة\n"
+    "🏢 تنشر <b>إعلان وظيفة</b> لشركتك أو مكتبك أو معملك، وتلقى الموظف المناسب\n"
+    "💬 تتواصل ويانا لأي استفسار\n\n"
+    "اختار 👇\n\n"
     "🔒 <i>معلوماتك تُستخدم فقط لإعداد سيرتك الذاتية وترشيحك لفرص عمل مناسبة، وما تنشر بشكل عام.</i>"
 )
+AD_PRICE = int(re.sub(r"\D", "", env("AD_PRICE_IQD", "10000")) or 0)  # one job ad in the channel
+AD_REACH = env("AD_REACH", "5,000")  # how many job seekers an ad can reach (said in the companies text)
 COURSE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "courses")
 COURSE_PRICE = int(re.sub(r"\D", "", env("COURSE_PRICE_IQD")) or 0)  # one course; empty -> the admin tells the price
-COURSES = {"interviews": "🎤 كورس المقابلات الوظيفية", "medrep": "💼 كورس المندبة الطبية والمبيعات"}
+COURSES = {"interviews": "🎤 كورس المقابلات الوظيفية", "jobsearch": "🔎 كورس البحث عن عمل",
+           "medrep": "💼 كورس المندبة الطبية والمبيعات"}  # all of them come with the CV package
 
 
 def course_lessons(course):
@@ -160,28 +160,43 @@ def course_lessons(course):
     return out
 
 
-def courses_text():
-    lines = [f"🎓 <b>كورسات {COMPANY}</b>",
-             "🎬 <b>فيديوهات تعليمية قصيرة</b> بشكل ريلز، بصوت وشرح وتصميم ديجيتال، "
-             "كل درس 3 دقايق تقريباً، وتشوفها داخل البوت وترجعلها متى ما تريد.\n"]
-    for key, title in COURSES.items():
-        lessons = course_lessons(key)
-        lines.append(f"<b>{title}</b> ({len(lessons)} دروس)")
-        lines += [f"{i}. {esc(t)}" for i, t in enumerate(lessons, 1)]
-        lines.append("")
-    lines += ["✅ <b>شنو تحصل:</b>",
-              "• شرح عملي بأمثلة من سوق العمل العراقي",
-              "• 🎭 مقابلة تجريبية كاملة: تسمع الأسئلة والأجوبة بين مسؤولة التوظيف والمتقدم، ويا ملاحظات المدرب",
-              "• خطوات واضحة تطبقها بالمقابلة وبالشغل الميداني",
-              "• الدروس تبقى عندك بالبوت، تعيدها متى ما تريد", ""]
-    lines.append(f"💰 سعر الكورس الواحد: <b>{COURSE_PRICE:,} دينار</b>" if COURSE_PRICE and PAID
-                 else "💰 السعر وطريقة الدفع يبلغك بيهن أحد موظفينا بعد ما تختار.")
-    lines.append("\nاختار الكورس 👇")
-    return "\n".join(lines)
+def videos_text(n):
+    return "فيديو واحد" if n == 1 else "فيديوين" if n == 2 else f"{n} فيديوهات"
 
 
-COURSES_TEXT = courses_text  # kept for older callers
-COURSE_CHOICES = [("interviews", "🎤 كورس المقابلات"), ("medrep", "💼 كورس المندبة"), ("all", "📚 الكورسين")]
+def package_lines():
+    """What the CV package includes (one package: the courses are not sold on their own)."""
+    n = {k: len(course_lessons(k)) for k in COURSES}
+    return [
+        "📄 <b>سيرة ذاتية احترافية جداً</b> بالإنگليزي، بالمعايير المعتمدة حالياً بالشركات، وبأكثر من صيغة:",
+        "   • نسخة <b>PDF بتصميم احترافي</b> للواتساب والطباعة",
+        "   • نسخة <b>ATS</b> للتقديم على المواقع والشركات اللي تفرز السيفيات إلكترونياً",
+        "   • <b>رسالة تغطية Cover Letter</b> مكتوبة إلك",
+        f"🎤 <b>كورس المقابلات</b> ({videos_text(n['interviews'])}): شلون تتحضر، شنو تگول بالمقابلة، "
+        "أشهر الأسئلة وأجوبتها، ومقابلة تجريبية كاملة",
+        f"🔎 <b>كورس البحث عن عمل</b> ({videos_text(n['jobsearch'])}): وين تدور على وظيفة مناسبة، "
+        "وشلون تقدّم حتى يتصلون بيك",
+        "📋 <b>تحضير مقابلة خاص بيك</b>: أهم الأسئلة لوظيفتك ويا أجوبة مقترحة من خبرتك",
+        f"🎁 وهدية: <b>كورس المندبة الطبية والمبيعات</b> ({videos_text(n['medrep'])})",
+        "🤝 وترشيح السي في مالتك للشركات اللي تطلب موظفين من عدنا",
+    ]
+
+
+def package_text():
+    price = (f"\n\n💰 كل هذا بـ <b>{PRICE_IQD:,} دينار</b> بس، تدفعها بالأخير بعد ما تكمل معلوماتك."
+             if PAID else "")
+    return f"📦 <b>باقة السيرة الذاتية من {COMPANY}</b>\n\n" + "\n".join(package_lines()) + price
+
+
+ADS_TEXT = lambda: (
+    "🏢 <b>للشركات والمكاتب العلمية والمعامل</b>\n\n"
+    f"تدور على <b>الموظف المثالي</b>؟ انشر إعلانك ويانا بـ<b>{PARTNER}</b> 📢\n\n"
+    f"👥 إعلانك ممكن يوصل لحدود <b>{AD_REACH}</b> شخص يدور على شغل، وشريحة كبيرة منهم <b>كفاءات ومتميزين</b> بشغلهم\n"
+    "✍️ فريقنا يرتب إعلانك بشكل احترافي وواضح، حتى يوصل للناس الصح ويجيبلك أنسب المتقدمين\n"
+    "🤝 ونرشحلك من عدنا سيفيات مناسبة لطلبك\n"
+    "💡 كل ما كانت المتطلبات والمهام والراتب أوضح، يوصلك متقدمين أنسب\n\n"
+    + (f"💰 سعر الإعلان: <b>{AD_PRICE:,} دينار</b> بس\n\n" if AD_PRICE else "")
+    + "اكتبلنا تفاصيل الإعلان بالخطوات الجاية 👇")
 video_ids = {}  # (course, n) -> Telegram file_id after the first upload
 
 QUESTIONS = {  # step -> (question, optional?)
@@ -231,16 +246,17 @@ QUESTIONS = {  # step -> (question, optional?)
               "نعدّلها ونضبطها إلك، وتگدر تدز <b>أكثر من صورة</b> وتختار الأحلى، أو تخلي الأصلية.\n"
               "وإذا ما تريد صورة اضغط تخطي", True),
     # job ad
-    "ad_company": ("🏢 <b>للشركات: طلب مندوبين أو موظفين</b>\n\n"
-                   "تحتاجون مندوبين أو موظفين أو خدمات؟ اكتبولنا التفاصيل، ونرشحلكم أنسب المتقدمين من عدنا، "
-                   "وننشر إعلانكم إذا تحبون ✅\n\nاسم الشركة أو الجهة", False),
+    "ad_company": ("🏢 اسم الشركة أو المكتب أو المعمل", False),
     "ad_title": ("المسمى الوظيفي\nمثال: مندوب مبيعات طبي", False),
     "ad_city": ("مكان العمل (المدينة أو المنطقة)", False),
     "ad_req": ("المؤهلات والخبرة المطلوبة", False),
     "ad_resp": ("المهام الرئيسية للوظيفة", False),
+    "ad_salary": ("💰 الراتب أو المميزات (اختياري)\nمثال: <b>راتب 750 ألف + نسبة مبيعات + سيارة</b>\n"
+                  "إذا ما تريد تذكره اضغط تخطي", True),
     "ad_contact": ("طريقة التقديم أو التواصل\nمثال: رقم واتساب، إيميل، أو معرف تيليجرام", False),
+    "ad_payment": ("", False),
     # contact
-    "contact_msg": (f"💬 اكتب رسالتك لإدارة {COMPANY} هنا، وراح نرد عليك بهذا البوت", False),
+    "contact_msg": ("💬 اكتب رسالتك هنا، وراح يرد عليك أحد موظفينا بهذا البوت", False),
 }
 EDIT_FIELDS = [  # (label, group)
     ("الاسم", "name"), ("الوظيفة", "job_title"), ("الهاتف", "phone"), ("الإيميل", "email"),
@@ -253,7 +269,7 @@ EXP_GROUP = {"has_exp", "job_company", "job_role", "job_place", "job_duration", 
 EDIT_CONTINUES = {"name": {"name_ok"}, "edu": {"specialty", "university", "edu_status"}, "exp": EXP_GROUP,
                   "langs": {"other_langs", "lang_level"}, "field_extra": {"survey", "licence"}}
 EDIT_START = {"edu": "degree_level", "exp": "has_exp", "langs": "english"}
-AD_ORDER = ["ad_company", "ad_title", "ad_city", "ad_req", "ad_resp", "ad_contact"]
+AD_ORDER = ["ad_company", "ad_title", "ad_city", "ad_req", "ad_resp", "ad_salary", "ad_contact"]
 HIGH_SCHOOL = "High School Diploma"
 BACHELOR = "Bachelor's Degree"
 
@@ -487,7 +503,7 @@ def show_menu(chat_id):
 
 def cv_intro():
     """The two messages that open a CV: instructions, then the form with a one-tap copy button."""
-    price = f"\n💰 كلفة الخدمة: <b>{PRICE_IQD:,} دينار</b>، تدفعها بالأخير." if PAID else ""
+    price = ""  # said in the package message
     free_text = "✍️ وإذا تحب، اكتب معلوماتك <b>براحتك بدون كليشة</b>، وإحنا نرتبها.\n\n" if ai.enabled() else ""
     intro = ("📝 <b>إنشاء سيرة ذاتية</b>\n\n"
              "1️⃣ اضغط زر <b>📋 انسخ الكليشة</b> اللي تحت\n"
@@ -519,7 +535,9 @@ TALK_INTRO = (
 )
 
 
-def start_cv(chat_id, user):
+def start_cv(chat_id, user, package=False):
+    if package:
+        send(chat_id, package_text(), remove_keyboard=True)
     if not ai.enabled():  # no AI key: the copyable form, read by form.py
         new_session(chat_id, "cv", "form", user)
         intro, form_text, buttons, plain_buttons = cv_intro()
@@ -530,8 +548,7 @@ def start_cv(chat_id, user):
         return
     sess = new_session(chat_id, "cv", "talk", user)
     sess["talk"], sess["rounds"] = [], 0
-    price = f"\n\n💰 كلفة الخدمة: <b>{PRICE_IQD:,} دينار</b>، تدفعها بالأخير." if PAID else ""
-    send(chat_id, TALK_INTRO + price, remove_keyboard=True, inline=[
+    send(chat_id, TALK_INTRO, remove_keyboard=True, inline=[
         [{"text": "📋 أفضّل أعبّي كليشة", "callback_data": "u:form"},
          {"text": "🗣️ أفضّل سؤال سؤال", "callback_data": "u:steps"}]])
 
@@ -1749,23 +1766,20 @@ def cv_caption(d, chat_id, status):
 def payment_message():
     name = f"الاسم: <b>{esc(QI_CARD_NAME)}</b>\n" if QI_CARD_NAME else ""
     return (
-        f"خدمة <b>{COMPANY}</b> تشمل إعداد <b>سيرة ذاتية احترافية بصيغة PDF</b>، مع ترشيحك للشركات "
-        "اللي تطلب مندوبين وموظفين حسب مؤهلاتك ومتطلباتها.\n\n"
-        f"💰 كلفة الخدمة: <b>{PRICE_IQD:,} دينار عراقي</b>\n\n"
-        f"{GIFT_TEASER}\n\n"
+        f"📦 <b>باقة السيرة الذاتية من {COMPANY}</b> تشمل:\n" + "\n".join(package_lines()) + "\n\n"
+        f"💰 كلفة الباقة كاملة: <b>{PRICE_IQD:,} دينار عراقي</b>\n\n"
         f"💳 حوّل على بطاقة <b>Qi Card</b>:\n{name}رقم البطاقة: <code>{esc(QI_CARD_NUMBER)}</code>\n\n"
         "📸 بعدها دز <b>صورة تأكيد الدفع</b> هنا.\n"
-        f"بعد تأكيد الدفع، فريقنا يجهز السي في مالتك ويراجعه ويدققه، ويوصلك ويا الهدايا هنا <b>{CV_WAIT}</b>.\n\n"
+        "بعد تأكيد الدفع، فريقنا يجهز السي في مالتك ويراجعه ويدققه، ويوصلك ويا الكورسات والهدايا هنا "
+        f"<b>{CV_WAIT}</b>.\n\n"
         "<i>ملاحظة: ترشيح السيرة الذاتية يعتمد على توفر الفرص ومدى توافق مؤهلاتك مع متطلبات الوظيفة، "
         "ولا يضمن الحصول على مقابلة أو وظيفة.</i>"
     )
 
 
 GIFT_TEASER = (
-    "🎁 <b>ويا السي في تستلم هدايا مجانية:</b>\n"
-    "📄 <b>نسخة ATS</b> ثانية للتقديم على المواقع والشركات اللي تفرز السيفيات إلكترونياً\n"
-    "✉️ <b>رسالة تغطية Cover Letter</b> بالإنگليزي مكتوبة إلك\n"
-    "🎤 <b>تحضير للمقابلة</b>: أهم الأسئلة لوظيفتك ويا أجوبة مقترحة من خبرتك"
+    "🎁 <b>ويا السي في توصلك:</b> نسخة ATS، رسالة تغطية، تحضير مقابلة خاص بيك، "
+    "وكورسات المقابلات والبحث عن عمل والمندبة 🎓"
 )
 FALLBACK_INTERVIEW = [
     ("عرّفنا بنفسك", "ابدي باسمك ودراستك، بعدها خبرتك أو أقوى مهارة عندك، واختم بليش تريد هذي الوظيفة. خليها دقيقة وحدة."),
@@ -1989,7 +2003,7 @@ def forward_to_admin(chat_id, msg, header, reply_to=None):
 def handle_payment_proof(chat_id, sess, msg):
     is_image = msg.get("photo") or (msg.get("document") or {}).get("mime_type", "").startswith(("image/", "application/pdf"))
     if not is_image:
-        send(chat_id, "📸 دز <b>صورة تأكيد الدفع</b> هنا.\nإذا عندك سؤال، اكتب /start واختار 💬 تواصل ويانا.")
+        send(chat_id, "📸 دز <b>صورة تأكيد الدفع</b> هنا.\nإذا عندك سؤال، اكتب /start واختار 💬 تواصل معنا.")
         return
     d = sess["data"] if sess else {}
     name = f" — {esc(d['full_name'])}" if d.get("full_name") else ""
@@ -2041,8 +2055,8 @@ SCHEDULE_HEAD = "📌 جدول تسليم السي في"
 deliveries = {}
 schedule = {"msg": None, "loaded": False, "text": ""}
 schedule_lock = threading.RLock()
-STAGES_PAID = ["استلام المعلومات", "تأكيد الدفع", "تجهيز ومراجعة السي في من فريقنا", "التسليم ويا الهدايا"]
-STAGES_FREE = ["استلام المعلومات", "مراجعة وموافقة فريقنا", "تجهيز السي في", "التسليم ويا الهدايا"]
+STAGES_PAID = ["استلام المعلومات", "تأكيد الدفع", "تجهيز ومراجعة السي في من فريقنا", "التسليم ويا الكورسات والهدايا"]
+STAGES_FREE = ["استلام المعلومات", "مراجعة وموافقة فريقنا", "تجهيز السي في", "التسليم ويا الكورسات والهدايا"]
 
 
 def order_status(order, stage):
@@ -2220,8 +2234,9 @@ def deliver_cv(mid, job=None, claimed=False):
         status += " + الهدايا 🎁" if g.get("ok") else " (الهدايا ما انرسلت)"
     if res.get("ok"):
         send(target, f"🤝 هسه السي في مالتك ضمن المرشحين عدنا بـ <b>{COMPANY}</b>، "
-                     "ونرشحك للشركات اللي تطلب حسب مؤهلاتك.\n"
-                     "🎓 وإذا تريد تتجهز أكثر، شوف كورسات المقابلات والمندبة من /start")
+                     "ونرشحك للشركات اللي تطلب حسب مؤهلاتك.")
+        if open_courses(target):
+            status += " + الكورسات 🎓"
     if job.get("cap") is not None:
         tg("editMessageCaption", chat_id=ADMIN_CHAT_ID, message_id=mid, caption=f"{job['cap']}\n{status}"[:1024])
     else:
@@ -2298,25 +2313,35 @@ def set_delivery(mid, msg, target, gift_ids, when):
 
 
 # ================================================================= job ad
+AD_PAID = lambda: bool(AD_PRICE and QI_CARD_NUMBER and ADMIN_CHAT_ID)
+
+
 def ad_text(d):
     city = tag(d.get("ad_city"))
-    footer = f"\n\n📝 تريد سيرة ذاتية احترافية من {COMPANY}؟ @{BOT_USERNAME}" if BOT_USERNAME else ""
+    footer = f"\n\n📝 تريد سيرة ذاتية احترافية وكورس المقابلات؟ @{BOT_USERNAME}" if BOT_USERNAME else ""
+    salary = f"💰 <b>الراتب والمميزات:</b> {esc(d['ad_salary'])}\n\n" if d.get("ad_salary") else ""
     return (f"📢 <b>فرصة عمل: {esc(d['ad_title'])}</b>\n\n"
-            f"🏢 <b>الشركة:</b> {esc(d['ad_company'])}\n"
+            f"🏢 <b>الجهة:</b> {esc(d['ad_company'])}\n"
             f"📍 <b>مكان العمل:</b> {esc(d['ad_city'])}\n\n"
             f"✅ <b>المتطلبات:</b>\n{esc(d['ad_req'])}\n\n"
             f"📋 <b>المهام:</b>\n{esc(d['ad_resp'])}\n\n"
+            f"{salary}"
             f"📞 <b>للتقديم:</b> {esc(d['ad_contact'])}"
             f"{footer}\n\n#وظائف" + (f" #{city}" if city else ""))
 
 
 def handle_ad_answer(chat_id, sess, msg):
     step, d = sess["step"], sess["data"]
+    if step == "ad_payment":
+        handle_ad_payment(chat_id, sess, msg)
+        return
     text = (msg.get("text") or "").strip()
     if step == "ad_confirm":
         send(chat_id, "اضغط زر من الأزرار تحت الإعلان 👆")
         return
-    if not text or text.startswith("/"):
+    if step == "ad_salary" and text in (SKIP, "/skip", "تخطي"):
+        text = ""
+    elif not text or text.startswith("/"):
         send(chat_id, "اكتب الجواب كنص رجاءً 🙏")
         return
     d[step] = text[:900 if step in ("ad_req", "ad_resp") else 150]
@@ -2326,24 +2351,64 @@ def handle_ad_answer(chat_id, sess, msg):
         ask(chat_id, sess["step"])
         return
     sess["step"] = "ad_confirm"
-    send(chat_id, "👀 <b>هذا شكل إعلانك:</b>")
+    send(chat_id, "👀 <b>هذا شكل إعلانك بالقناة:</b>", remove_keyboard=True)
     send(chat_id, ad_text(d), inline=[
-        [{"text": "✅ إرسال للمراجعة", "callback_data": "a:send"}],
+        [{"text": "✅ تمام، كمّل للدفع" if AD_PAID() else "✅ إرسال للمراجعة", "callback_data": "a:send"}],
         [{"text": "🔄 إعادة", "callback_data": "a:restart"}, {"text": "❌ إلغاء", "callback_data": "a:cancel"}],
     ])
 
 
 def submit_ad(chat_id, sess):
-    sessions.pop(chat_id, None)
     if not ADMIN_CHAT_ID:
+        sessions.pop(chat_id, None)
         send(chat_id, "عذراً، الخدمة مو متوفرة هسه 🙏")
         return
-    preview = send(ADMIN_CHAT_ID, ad_text(sess["data"]))
-    pid = (preview.get("result") or {}).get("message_id")
-    send(ADMIN_CHAT_ID, f"📢 <b>إعلان وظيفة جديد للمراجعة</b>\nمن: {user_handle(sess['data'].get('tg_user'), chat_id)}",
-         reply_to=pid, inline=[[{"text": "✅ نشر بالقناة", "callback_data": f"adok:{chat_id}"},
-                                {"text": "❌ رفض", "callback_data": f"adno:{chat_id}"}]])
+    if AD_PAID():  # pay first: the ad goes to the admin together with the payment photo
+        sess["step"] = "ad_payment"
+        name = f"الاسم: <b>{esc(QI_CARD_NAME)}</b>\n" if QI_CARD_NAME else ""
+        send(chat_id, f"💰 سعر الإعلان: <b>{AD_PRICE:,} دينار عراقي</b>\n\n"
+                      f"💳 حوّل على بطاقة <b>Qi Card</b>:\n{name}رقم البطاقة: <code>{esc(QI_CARD_NUMBER)}</code>\n\n"
+                      f"📸 بعدها دز <b>صورة تأكيد الدفع</b> هنا، وبعد ما نتأكد ينتشر إعلانك بـ{PARTNER} 📢")
+        return
+    sessions.pop(chat_id, None)
+    send_ad_to_admin(chat_id, sess["data"])
     send(chat_id, f"✅ وصل طلبكم لفريق {COMPANY}.\nراح يتواصل وياكم أحد موظفينا هنا، ونرشحلكم أنسب المتقدمين 🤍")
+
+
+def send_ad_to_admin(chat_id, d, proof=None):
+    """The ad as it will look, (the payment photo under it,) and the control message with the buttons."""
+    preview = send(ADMIN_CHAT_ID, ad_text(d))
+    pid = (preview.get("result") or {}).get("message_id")
+    paid_line = ""
+    if proof:
+        forward_to_admin(chat_id, proof, f"🧾 <b>إثبات دفع إعلان</b> ({AD_PRICE:,} د.ع)\n{user_handle(d.get('tg_user'), chat_id)}",
+                         reply_to=pid)
+        paid_line = f"\n⚠️ تأكد من وصول <b>{AD_PRICE:,} دينار</b> بتطبيق Qi Card قبل النشر"
+    res = send(ADMIN_CHAT_ID, f"📢 <b>إعلان وظيفة {'مدفوع ' if proof else ''}للمراجعة</b>\n"
+                              f"من: {user_handle(d.get('tg_user'), chat_id)}{paid_line}",
+               reply_to=pid, inline=[[{"text": "✅ نشر بالقناة", "callback_data": f"adok:{chat_id}"},
+                                      {"text": "❌ رفض", "callback_data": f"adno:{chat_id}"}]])
+    return res
+
+
+def handle_ad_payment(chat_id, sess, msg):
+    is_image = msg.get("photo") or (msg.get("document") or {}).get("mime_type", "").startswith(("image/", "application/pdf"))
+    if not is_image:
+        send(chat_id, f"📸 دز <b>صورة تأكيد الدفع</b> ({AD_PRICE:,} دينار) هنا حتى ينتشر إعلانك.")
+        return
+    res = send_ad_to_admin(chat_id, sess["data"], proof=msg)
+    sessions.pop(chat_id, None)
+    if not res.get("ok"):
+        send(chat_id, "صار خطأ بالإرسال 😔 دز الصورة مرة ثانية من /start")
+        return
+    pending_payments[chat_id] = {"t": time.time(), "msg": res["result"]["message_id"], "what": "نشر إعلانه",
+                                 "name": sess["data"].get("ad_company")}
+    for minutes in (10, 30):
+        timer = threading.Timer(minutes * 60, remind_admin, args=(chat_id, minutes))
+        timer.daemon = True
+        timer.start()
+    send(chat_id, "✅ <b>استلمنا صورة الدفع، شكراً إلكم 🤍</b>\n"
+                  f"👩‍💼 هسه موظف من فريقنا دا يتأكد من وصول المبلغ، وبعدها ينتشر إعلانكم بـ{PARTNER} 📢")
 
 
 # ================================================================ courses
@@ -2400,9 +2465,23 @@ def send_lesson(chat_id, course, n):
     return False
 
 
+def open_courses(chat_id):
+    """With the CV: one message with all the courses (signed buttons), pinned at the top of their chat."""
+    rows = [[{"text": f"{COURSES[k]} ({videos_text(len(course_lessons(k)))})",
+              "callback_data": f"v:{k}:0:{course_sig(chat_id, k)}"}] for k in COURSES if course_lessons(k)]
+    if not rows:
+        return False
+    res = send(chat_id, "🎓 <b>كورساتك صارت مفتوحة</b>\n"
+                        "ابدي بكورس المقابلات، بعدها البحث عن عمل. تشوفها هنا وترجعلها متى ما تريد 👇\n\n"
+                        "📌 <i>ثبتنالك هاي الرسالة فوگ حتى تلگاها بسهولة.</i>", inline=rows)
+    if res.get("ok"):
+        tg("pinChatMessage", chat_id=chat_id, message_id=res["result"]["message_id"], disable_notification=True)
+    return bool(res.get("ok"))
+
+
 def unlock_course(chat_id, course):
     lessons = course_lessons(course)
-    res = send(chat_id, f"🎉 <b>انفتحلك {COURSES[course]}</b>\n{len(lessons)} دروس فيديو، تشوفها هنا وترجعلها متى ما تريد.\n"
+    res = send(chat_id, f"🎉 <b>انفتحلك {COURSES[course]}</b>\n{videos_text(len(lessons))}، تشوفها هنا وترجعلها متى ما تريد.\n"
                         "هذا الدرس الأول 👇")
     if not res.get("ok"):
         return False
@@ -2489,13 +2568,10 @@ def handle_callback(cq):
                 show_summary(chat_id, sess)
             else:
                 ask(chat_id, sess["step"])
-        elif data == "m:cv":
-            start_cv(chat_id, user)
-        elif data == "m:courses":
-            send(chat_id, courses_text(), inline=[[{"text": label, "callback_data": f"k:buy:{key}"}]
-                                                  for key, label in COURSE_CHOICES]
-                 + [[{"text": "↩️ القائمة", "callback_data": "k:menu"}]])
+        elif data in ("m:cv", "m:courses"):  # the courses come with the CV package
+            start_cv(chat_id, user, package=True)
         elif data == "m:ad":
+            send(chat_id, ADS_TEXT(), remove_keyboard=True)
             new_session(chat_id, "ad", "ad_company", user)
             ask(chat_id, "ad_company")
         elif data == "m:contact":
@@ -2511,8 +2587,8 @@ def handle_callback(cq):
         drop_buttons()
         if data == "k:menu":
             show_menu(chat_id)
-        elif data.startswith("k:buy:"):
-            start_course_purchase(chat_id, user, data[6:])
+        elif data.startswith("k:buy:"):  # old buttons: the courses now come with the CV package
+            start_cv(chat_id, user, package=True)
         return
     if data.startswith("v:"):  # a lesson: v:<course>:<n>:<signature>
         parts = data.split(":")
@@ -2606,7 +2682,7 @@ def handle_callback(cq):
             gift_ids = sorted(int(x) for x in parts[2:] if x.isdigit()) or gifts_by_user.get(target, [])
             approve_cv(msg, target, gift_ids, pending)
             return
-        text = ("❌ ما گدرنا نتأكد من وصول الدفع.\nإذا حوّلت المبلغ، اكتب /start واختار 💬 تواصل ويانا."
+        text = ("❌ ما گدرنا نتأكد من وصول الدفع.\nإذا حوّلت المبلغ، اكتب /start واختار 💬 تواصل معنا."
                 if PAID else "عذراً، نحتاج نراجع معلوماتك 🙏 تگدر تعيد التقديم من /start أو راح يتواصل وياك أحد موظفينا.")
         send(target, text)
         tg("editMessageCaption", chat_id=chat_id, message_id=mid, caption=f"{caption}\n\n❌ مرفوض"[:1024])
@@ -2628,30 +2704,45 @@ def handle_callback(cq):
             ok = all(unlock_course(target, k) for k in keys) if keys else False
             status = "✅ انفتح الكورس للشخص" if ok else "⚠️ ما گدرت أدزله (يمكن حاظر البوت)"
         else:
-            send(target, "❌ ما گدرنا نتأكد من الدفع للكورس.\nإذا حوّلت المبلغ، اكتب /start واختار 💬 تواصل ويانا.")
+            send(target, "❌ ما گدرنا نتأكد من الدفع للكورس.\nإذا حوّلت المبلغ، اكتب /start واختار 💬 تواصل معنا.")
             status = "❌ مرفوض"
         if msg.get("caption") is not None:
             tg("editMessageCaption", chat_id=chat_id, message_id=mid, caption=f"{base}\n\n{status}"[:1024])
         else:
             tg("editMessageText", chat_id=chat_id, message_id=mid, text=f"{base}\n\n{status}"[:4000])
-    elif action in ("adok", "adno"):
+    elif action in ("adok", "adno", "adpub"):
         original = (msg.get("text") or "").split("\n\n")[0]
         drop_buttons()
+        pending_payments.pop(target, None)
         if action == "adno":
-            send(target, "عذراً، إعلانك ما انقبل للنشر 🙏 للاستفسار اكتب /start واختار 💬 تواصل ويانا.")
+            send(target, "عذراً، ما گدرنا ننشر الإعلان هسه 🙏 إذا حوّلتوا المبلغ أو عندكم استفسار، "
+                         "اكتبوا /start واختاروا 💬 تواصل معنا.")
             tg("editMessageText", chat_id=chat_id, message_id=mid, text=f"{original}\n\n❌ مرفوض")
             return
+        done = ("🎉 <b>انتشر إعلانكم بـ" + PARTNER + "</b>\n"
+                "المتقدمين راح يتواصلون وياكم على طريقة التقديم اللي كتبتوها، "
+                "وإذا عدنا سيفيات مناسبة نرشحها إلكم 🤝")
+        if action == "adpub":  # the admin posted it himself
+            send(target, done)
+            tg("editMessageText", chat_id=chat_id, message_id=mid, text=f"{original}\n\n✅ انتشر بالقناة")
+            return
         preview_id = (msg.get("reply_to_message") or {}).get("message_id")
-        res = {"ok": False, "description": "CHANNEL_ID مو محدد"}
-        if CHANNEL_ID and preview_id:
-            res = tg("copyMessage", chat_id=CHANNEL_ID, from_chat_id=chat_id, message_id=preview_id)
+        if not CHANNEL_ID:
+            send(target, f"✅ <b>تمت الموافقة على إعلانكم</b>\nينزل بـ{PARTNER} خلال وقت قصير 📢")
+            tg("editMessageText", chat_id=chat_id, message_id=mid,
+               text=f"{original}\n\n✅ موافق. القناة مو مربوطة بالبوت: حوّل رسالة الإعلان (فوگ) للقناة، "
+                    "وبعدها اضغط «✅ نشرته» حتى يوصلهم إشعار.",
+               reply_markup={"inline_keyboard": [[{"text": "✅ نشرته", "callback_data": f"adpub:{target}"}]]})
+            return
+        res = tg("copyMessage", chat_id=CHANNEL_ID, from_chat_id=chat_id, message_id=preview_id) if preview_id else {}
         if res.get("ok"):
-            send(target, "🎉 انتشر إعلانك بالقناة. بالتوفيق!")
+            send(target, done)
             tg("editMessageText", chat_id=chat_id, message_id=mid, text=f"{original}\n\n✅ انتشر بالقناة")
         else:
             tg("editMessageText", chat_id=chat_id, message_id=mid,
                text=f"{original}\n\n⚠️ ما گدرت أنشر: تأكد إن CHANNEL_ID صحيح والبوت مشرف بالقناة.",
-               reply_markup={"inline_keyboard": [[{"text": "🔁 جرب مرة ثانية", "callback_data": f"adok:{target}"}]]})
+               reply_markup={"inline_keyboard": [[{"text": "🔁 جرب مرة ثانية", "callback_data": f"adok:{target}"},
+                                                  {"text": "✅ نشرته بنفسي", "callback_data": f"adpub:{target}"}]]})
 
 
 # ============================================================== messages
@@ -2704,7 +2795,7 @@ def handle_update(upd):
         show_menu(chat_id)
         return
     if cmd == "/cv":
-        start_cv(chat_id, msg.get("from") or {})
+        start_cv(chat_id, msg.get("from") or {}, package=True)
         return
     if cmd == "/cancel":
         sessions.pop(chat_id, None)
@@ -2903,7 +2994,8 @@ def self_test():
         vids = {k: sum(os.path.exists(os.path.join(COURSE_DIR, "videos", f"{k}-{n}.mp4"))
                        for n in range(1, len(course_lessons(k)) + 1)) for k in COURSES}
         out.append("course videos: " + ", ".join(f"{k} {v}/{len(course_lessons(k))}" for k, v in vids.items())
-                   + f" | course price: {COURSE_PRICE or 'not set (admin request)'}")
+                   + f" (come with the CV) | ad price: {AD_PRICE or 'free'}, paid ads: {'on' if AD_PAID() else 'off'}"
+                   + f", channel: {'linked' if CHANNEL_ID else 'not linked (admin posts by hand)'}")
         out.append(f"cv delivery: {'right after approval' if DELIVERY_MODE == 'now' else 'admin chooses (buttons)'}"
                    f", buyer told '{CV_WAIT}', later button {CV_DELAY} min, working hours {WORK_START}-{WORK_END} Baghdad"
                    f", waiting {len(deliveries)}, schedule {'pinned' if schedule['msg'] else 'loaded' if schedule['loaded'] else 'not read yet'}")
@@ -3018,14 +3110,13 @@ def webhook():
     return "ok"
 
 
-SHORT_DESC = f"{COMPANY} 🩺 تابعين لـ{PARTNER} | سي في احترافي، ترشيح للشركات، وكورسات مقابلات ومندبة"
+SHORT_DESC = f"{COMPANY} 🩺 تابعين لـ{PARTNER} | سي في احترافي ويا كورس المقابلات، وإعلانات وظائف للشركات"
 LONG_DESC = (f"🩺 {COMPANY} | {COMPANY_EN}\n"
-             f"شركة متخصصة بالتوظيف بالقطاع الطبي والمبيعات، تابعة لـ{PARTNER} 📢\n\n"
-             "📝 نصمملك سيرة ذاتية CV احترافية بالإنگليزي، يراجعها ويدققها فريقنا\n"
-             "🤝 نرشّح السي في مالتك للشركات اللي تطلب مندوبين وموظفين وخدمات\n"
-             "🎓 كورسات بالمقابلات الوظيفية والمندبة الطبية\n"
-             "🏢 وللشركات: نوفرلكم مندوبين وموظفين\n\n"
-             "احچي بالعربي أو دز بصمة صوت 🎤، واضغط Start 👇")
+             f"شركة توظيف بالقطاع الطبي والمبيعات، تابعة لـ{PARTNER} 📢\n\n"
+             "📝 سيرة ذاتية احترافية بأكثر من صيغة، ويا كورس المقابلات وكورس البحث عن عمل\n"
+             "🏢 للشركات والمكاتب والمعامل: انشر إعلان وظيفتك ولگي الموظف المناسب\n"
+             "💬 تواصل ويانا لأي استفسار\n\n"
+             "اضغط Start 👇")
 AVATAR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "avatar.jpg")
 
 
