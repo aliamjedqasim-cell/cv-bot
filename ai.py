@@ -232,6 +232,21 @@ def write_numbers(text, context):
                 NUMBERS_SCHEMA, "cv_numbers", max_tokens=800, seconds=30)
 
 
+AD_SCHEMA = _obj({"company": _text(), "title": _text(), "city": _text(), "requirements": _text(),
+                  "duties": _text(), "salary": _text(), "contact": _text()})
+AD_SYSTEM = """You turn what an Iraqi company wrote to a job-ads bot (usually Iraqi Arabic, sometimes several messages; later ones add to or correct earlier ones) into the fields of a job ad, in clear Arabic.
+- company: the company / office / factory name. title: the job title (e.g. مندوب مبيعات طبي). city: the work place.
+- requirements: what the applicant needs (one item per line). duties: the main tasks (one item per line).
+- salary: salary and benefits as they wrote them. contact: how to apply (phone, WhatsApp, Telegram username, email) exactly as written.
+- Keep their meaning and their numbers exactly; fix spelling lightly; never invent anything. null if not mentioned.
+Return only JSON that matches the schema."""
+
+
+def read_ad(text):
+    """A company's free-text job ad -> ad fields. Returns (data, model) or (None, reason)."""
+    return _ask(text[:4000], AD_SYSTEM, AD_SCHEMA, "job_ad", max_tokens=1200, seconds=30)
+
+
 STT_URL = "https://api.groq.com/openai/v1/audio/transcriptions"
 STT_MODELS = ("whisper-large-v3-turbo", "whisper-large-v3")
 STT_HINT = ("سيرة ذاتية. اسمي، رقم هاتفي، بغداد، البصرة، خريج، بكالوريوس صيدلة، طالب مرحلة، جامعة، "
