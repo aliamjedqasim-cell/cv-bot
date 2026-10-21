@@ -73,6 +73,7 @@ SYSTEM = """You are an expert Iraqi recruiter and professional CV writer. You re
 CONVERSATION RULES:
 - The input can hold several messages in order, including the bot's questions and the person's answers. Combine everything.
 - Later messages and corrections override earlier ones (e.g. "غير المحافظة للبصرة", "اسمي محمد مو علي", "احذف الخبرة الثانية").
+- A part marked "تصحيح من الشخص على الملخص" is the person correcting their data: apply it exactly, it always wins over everything said before (e.g. "غيّر المحافظة للبصرة" -> city_en "Basra", city_ar "البصرة").
 - Short answers belong to the question just before them (e.g. bot asked for the graduation year, person wrote "2022").
 
 TRUTH RULES (most important; a CV with a wrong fact gets the applicant rejected by HR):
