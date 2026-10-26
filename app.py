@@ -1681,11 +1681,20 @@ def cv_caption(d, chat_id, status):
     ])
 
 
+PAYMENT_OTHER = env("PAYMENT_OTHER")  # another way to pay, e.g. "زين كاش: 0780..." (shown under the card)
+
+
 def payment_message(order=None):
     name = f"الاسم: <b>{esc(QI_CARD_NAME)}</b>\n" if QI_CARD_NAME else ""
+    other = f"أو: <b>{esc(PAYMENT_OTHER)}</b>\n" if PAYMENT_OTHER else ""
     return ((f"✅ <b>استلمنا طلبك #M{order}</b>\n\n" if order else "")
-            + f"💰 حوّل <b>{PRICE_IQD:,} دينار</b> على Qi Card:\n{name}رقم البطاقة: <code>{esc(QI_CARD_NUMBER)}</code>\n\n"
-            f"📸 بعدها دز <b>صورة الدفع</b> هنا، والسي في يوصلك <b>{CV_WAIT}</b> ويا الكورسات 🎓")
+            + f"💰 حوّل <b>{PRICE_IQD:,} دينار</b> على Qi Card:\n{name}رقم البطاقة: <code>{esc(QI_CARD_NUMBER)}</code>\n"
+            + other + "\n"
+            f"📸 بعدها دز <b>صورة الدفع</b> هنا، والسي في يوصلك <b>{CV_WAIT}</b> ويا الكورسات 🎓\n"
+            "🤝 ونعرض السي في مالتك على الشركات اللي تطلب موظفين.")
+
+
+PAY_HELP = [[{"text": "🤔 عندي مشكلة بالدفع", "callback_data": "pay:why"}]]
 
 
 GIFT_TEASER = (
@@ -1878,7 +1887,8 @@ def finish_cv(chat_id, sess):
     if PAID:
         sess["mode"], sess["step"] = "cv", "payment"
         sess["admin_msg"] = admin_msg
-        send(chat_id, payment_message(admin_msg), remove_keyboard=True)
+        send(chat_id, payment_message(admin_msg), remove_keyboard=True, inline=PAY_HELP)
+        add_unpaid(chat_id, admin_msg)
     else:
         sessions.pop(chat_id, None)
         send(chat_id, f"✅ <b>استلمنا طلبك #M{admin_msg}</b>\nفريقنا يراجعه، والسي في يوصلك هنا ويا الكورسات 🎓",
@@ -1911,11 +1921,13 @@ def handle_payment_proof(chat_id, sess, msg):
         send(chat_id, "📸 دز <b>صورة الدفع</b> هنا.\nإذا عندك سؤال، اكتب /start واختار 💬 تواصل معنا.")
         return
     d = sess["data"] if sess else {}
+    order = (sess.get("admin_msg") if sess else None) or unpaid_order(chat_id)
     name = f" — {esc(d['full_name'])}" if d.get("full_name") else ""
     res = forward_to_admin(chat_id, msg, f"🧾 <b>إثبات دفع</b>{name}\n{user_handle(d.get('tg_user'), chat_id)}\n"
                                          "⚠️ تأكد من وصول المبلغ بتطبيق Qi Card قبل الموافقة",
-                           reply_to=sess.get("admin_msg") if sess else None)
+                           reply_to=order)
     sessions.pop(chat_id, None)
+    drop_unpaid(chat_id)
     if res.get("ok"):
         pending_payments[chat_id] = {"t": time.time(), "msg": (res.get("result") or {}).get("message_id"),
                                      "name": d.get("full_name")}
@@ -1925,7 +1937,7 @@ def handle_payment_proof(chat_id, sess, msg):
             timer.start()
         send(chat_id, "✅ <b>وصلت صورة الدفع، شكراً 🤍</b>\n"
                       "موظفنا يتأكد منها، وبعدها نبدي نجهز السي في مالتك.\n\n"
-                      + order_status(sess.get("admin_msg") if sess else None, 1))
+                      + order_status(order, 1))
     else:
         send(chat_id, "صار خطأ بالإرسال 😔 دز الصورة مرة ثانية")
 
@@ -2036,12 +2048,16 @@ def load_schedule():
         if not text.startswith(SCHEDULE_HEAD):
             return
         schedule["msg"] = pin.get("message_id")
-        m = re.search(r"(\[.*\])\s*$", text, re.S)
+        m = re.search(r"(\[.*\]|\{.*\})\s*$", text, re.S)
         try:
-            for row in json.loads(m.group(1)) if m else []:
+            state = json.loads(m.group(1)) if m else []
+            rows, waiting_pay = (state, []) if isinstance(state, list) else (state.get("d") or [], state.get("p") or [])
+            for row in rows:
                 u, t, k, g = row[:4]
                 deliveries.setdefault(int(k), {"u": int(u), "t": float(t), "g": [int(x) for x in g],
                                                "r": float(row[4]) if len(row) > 4 else 0})
+            for u, t, k, n, due in waiting_pay:
+                unpaid.setdefault(int(k), {"u": int(u), "t": float(t), "n": int(n), "due": float(due)})
         except Exception:
             log.exception("could not read the delivery schedule")
         log.info("delivery schedule loaded: %d waiting", len(deliveries))
@@ -2053,13 +2069,15 @@ def save_schedule():
     with schedule_lock:
         load_schedule()  # never overwrite a list that was not read back yet
         items = sorted(deliveries.items(), key=lambda kv: (kv[1]["t"] or 9e12, kv[0]))
-        state = json.dumps([[v["u"], int(v["t"]), k, v.get("g") or [], int(v.get("r") or 0)] for k, v in items],
+        state = json.dumps({"d": [[v["u"], int(v["t"]), k, v.get("g") or [], int(v.get("r") or 0)] for k, v in items],
+                            "p": [[v["u"], int(v["t"]), k, v["n"], int(v["due"])] for k, v in sorted(unpaid.items())]},
                            separators=(",", ":"))
         rows = [f"• {esc(v.get('n') or 'متقدم')} ← "
                 + (datetime.fromtimestamp(v["t"], BAGHDAD).strftime("%d/%m %H:%M") if v["t"] else "ينتظر قرارك")
                 for k, v in items[:20]] + ([f"… و{len(items) - 20} غيرهم"] if len(items) > 20 else [])
         text = (f"<b>{SCHEDULE_HEAD}</b>\n<i>البوت يحدّث هاي الرسالة وحده ويرجعلها إذا انعاد تشغيله، خليها مثبتة.</i>\n\n"
-                + ("\n".join(rows) if rows else "ماكو سي في بالانتظار ✅") + f"\n\n<code>{esc(state)}</code>")
+                + ("\n".join(rows) if rows else "ماكو سي في بالانتظار ✅")
+                + (f"\n💳 بانتظار الدفع: {len(unpaid)}" if unpaid else "") + f"\n\n<code>{esc(state)}</code>")
         if text == schedule["text"]:
             return
         if schedule["msg"]:
@@ -2067,12 +2085,119 @@ def save_schedule():
             if r.get("ok") or "not modified" in str(r.get("description", "")):
                 schedule["text"] = text
                 return
-        if not items:
+        if not items and not unpaid:
             return
         r = send(ADMIN_CHAT_ID, text, silent=True)
         if r.get("ok"):
             schedule["msg"], schedule["text"] = r["result"]["message_id"], text
             tg("pinChatMessage", chat_id=ADMIN_CHAT_ID, message_id=schedule["msg"], disable_notification=True)
+
+
+UNPAID_REMIND = (2 * 3600, 24 * 3600, 72 * 3600)  # after the payment message; then no more
+unpaid = {}  # order (admin CV message id) -> {"u": user, "t": payment message time, "n": reminders sent, "due": next}
+PAY_REASONS = {"price": "💰 السعر غالي", "card": "💳 ما عندي Qi Card", "later": "⏳ أدفع بعدين", "other": "💬 سبب ثاني"}
+REASON_BUTTONS = [[{"text": PAY_REASONS["price"], "callback_data": "pay:r:price"},
+                   {"text": PAY_REASONS["card"], "callback_data": "pay:r:card"}],
+                  [{"text": PAY_REASONS["later"], "callback_data": "pay:r:later"},
+                   {"text": PAY_REASONS["other"], "callback_data": "pay:r:other"}]]
+
+
+def unpaid_order(chat_id):
+    return next((k for k, v in list(unpaid.items()) if v["u"] == chat_id), None)
+
+
+def add_unpaid(chat_id, order):
+    with schedule_lock:
+        for k in [k for k, v in unpaid.items() if v["u"] == chat_id]:
+            unpaid.pop(k, None)
+        now = time.time()
+        unpaid[order] = {"u": chat_id, "t": now, "n": 0, "due": in_work_hours(now + UNPAID_REMIND[0])}
+        while len(unpaid) > 60:
+            unpaid.pop(min(unpaid))
+    save_schedule()
+
+
+def drop_unpaid(chat_id):
+    with schedule_lock:
+        gone = [k for k, v in unpaid.items() if v["u"] == chat_id]
+        for k in gone:
+            unpaid.pop(k, None)
+    if gone:
+        save_schedule()
+
+
+def pay_reminder(order, p):
+    """The reminders for a CV that was not paid (the third asks what is stopping them)."""
+    n = p["n"]
+    if n == 0:
+        text = (f"⏳ <b>طلبك #M{order} محفوظ عدنا</b>\n"
+                "باقي بس الدفع حتى يبدي فريقنا يجهز السي في مالتك، ويوصلك ويا الكورسات 🎓\n"
+                "🤝 وبعدها نعرض السي في مالتك على الشركات اللي تطلب موظفين.")
+        buttons = [[{"text": "💳 شلون أدفع؟", "callback_data": "pay:how"}]] + PAY_HELP
+    elif n == 1:
+        text = (f"📌 <b>تذكير بطلبك #M{order}</b>\n"
+                "الشركات تطلب موظفين كل يوم، وسيفك يدخل ضمن المرشحين عدنا أول ما يتأكد الدفع 🤝\n"
+                f"📄 والسي في يوصلك {CV_WAIT} من تأكيد الدفع.")
+        buttons = [[{"text": "💳 شلون أدفع؟", "callback_data": "pay:how"}]] + PAY_HELP
+    else:
+        text = f"⏰ <b>آخر تذكير بطلبك #M{order}</b>\nإذا أكو شي مانعك من الدفع، گلنا حتى نساعدك 👇"
+        buttons = REASON_BUTTONS + [[{"text": "💳 أريد أدفع هسه", "callback_data": "pay:how"}]]
+    return send(p["u"], text, inline=buttons)
+
+
+def remind_unpaid(now=None):
+    now = now or time.time()
+    changed = False
+    for order, p in list(unpaid.items()):
+        if p["due"] > now:
+            continue
+        changed = True
+        if p["n"] >= len(UNPAID_REMIND):  # nothing more to send: forget it
+            unpaid.pop(order, None)
+            continue
+        res = pay_reminder(order, p)
+        p["n"] += 1
+        if not res.get("ok"):  # blocked the bot
+            unpaid.pop(order, None)
+        elif p["n"] < len(UNPAID_REMIND):
+            p["due"] = in_work_hours(p["t"] + UNPAID_REMIND[p["n"]])
+        else:
+            p["due"] = now + 7 * 86400  # kept a week so a late payment photo still finds its CV
+    if changed:
+        save_schedule()
+
+
+def pay_answer(chat_id, user, what):
+    """The buttons under the payment message and the reminders."""
+    order = unpaid_order(chat_id)
+    if what == "how":
+        send(chat_id, payment_message(order), inline=PAY_HELP)
+        return
+    if what == "why":
+        send(chat_id, "شنو المانع؟ 👇", inline=REASON_BUTTONS)
+        return
+    reason = PAY_REASONS.get(what)
+    if not reason:
+        return
+    p = unpaid.get(order) or {}
+    if ADMIN_CHAT_ID:
+        send(ADMIN_CHAT_ID, f"📊 <b>ما دفع، والسبب:</b> {reason}\n👤 {user_handle(user, chat_id)}"
+                            + (f"\n🧾 طلب #M{order}" if order else "")
+                            + "\n<i>رد على هاي الرسالة حتى تحچي وياه.</i>", reply_to=order)
+    if what == "later":
+        if p:
+            p["n"] = min(p["n"], len(UNPAID_REMIND) - 1)
+            p["due"] = in_work_hours(time.time() + 24 * 3600)
+        send(chat_id, "تمام 🤍 طلبك محفوظ، ونذكرك باچر.")
+    elif what == "other":
+        new_session(chat_id, "contact", "contact_msg", user)
+        send(chat_id, "اكتبلنا شنو المانع، ويرد عليك أحد موظفينا هنا 👇")
+    else:
+        if p:
+            p["n"], p["due"] = len(UNPAID_REMIND), time.time() + 7 * 86400  # no more reminders
+        extra = (f"\nتگدر تدفع هم بـ: <b>{esc(PAYMENT_OTHER)}</b>" if what == "card" and PAYMENT_OTHER else "")
+        send(chat_id, "شكراً لصراحتك 🤍 وصل لفريقنا، ويتواصل وياك أحد موظفينا هنا." + extra)
+    save_schedule()
 
 
 def waiting_delivery(chat_id):
@@ -2145,6 +2270,10 @@ def deliver_cv(mid, job=None, claimed=False):
 
 def deliver_due(now=None):
     now = now or time.time()
+    try:
+        remind_unpaid(now)
+    except Exception:
+        log.exception("payment reminders failed")
     for mid, job in list(deliveries.items()):
         try:
             if job["t"] and job["t"] <= now:
@@ -2507,7 +2636,7 @@ def handle_callback(cq):
             elif sess["step"] == "talk":
                 send(chat_id, sess.get("last_q") or TALK_INTRO)
             elif sess["step"] == "payment":
-                send(chat_id, payment_message())
+                send(chat_id, payment_message(unpaid_order(chat_id)), inline=PAY_HELP)
             elif sess["step"] == "confirm":
                 show_summary(chat_id, sess)
             else:
@@ -2527,6 +2656,13 @@ def handle_callback(cq):
             else:
                 new_session(chat_id, "contact", "contact_msg", user)
                 ask(chat_id, "contact_msg")
+        return
+
+    # ---- payment help (no session needed)
+    if data.startswith("pay:"):
+        if data.startswith("pay:r:"):
+            drop_buttons()
+        pay_answer(chat_id, user, data.split(":")[-1])
         return
 
     # ---- courses (no session needed)
@@ -2633,6 +2769,7 @@ def handle_callback(cq):
         caption = msg.get("caption") or ""
         drop_buttons()  # first, so a double tap can't send twice
         pending = pending_payments.pop(target, None)
+        drop_unpaid(target)
         if action == "ok":
             gift_ids = sorted(int(x) for x in parts[2:] if x.isdigit()) or gifts_by_user.get(target, [])
             approve_cv(msg, target, gift_ids, pending)
@@ -2769,6 +2906,8 @@ def handle_update(upd):
         elif chat_id in pending_payments and not cmd:
             mins = int((time.time() - pending_payments[chat_id]["t"]) / 60)
             send(chat_id, f"⏳ موظفنا دا يتأكد من الدفع هسه، وبعدها نجهز السي في مالتك 🤍")
+        elif not cmd and unpaid_order(chat_id) and len(clean(text)) < 40 and not msg.get("voice"):
+            send(chat_id, "⏳ السي في مالتك ينتظر الدفع بس 👇\n\n" + payment_message(unpaid_order(chat_id)), inline=PAY_HELP)
         elif not cmd and waiting_delivery(chat_id):
             order, job = waiting_delivery(chat_id)
             send(chat_id, f"⏳ فريقنا دا يجهز السي في مالتك، ويوصلك هنا "
@@ -2954,7 +3093,7 @@ def self_test():
                    + f", channel: {'linked' if CHANNEL_ID else 'not linked (admin posts by hand)'}")
         out.append(f"cv delivery: {'right after approval' if DELIVERY_MODE == 'now' else 'admin chooses (buttons)'}"
                    f", buyer told '{CV_WAIT}', later button {CV_DELAY} min, working hours {WORK_START}-{WORK_END} Baghdad"
-                   f", waiting {len(deliveries)}, schedule {'pinned' if schedule['msg'] else 'loaded' if schedule['loaded'] else 'not read yet'}")
+                   f", waiting {len(deliveries)}, unpaid {len(unpaid)} (reminders 2h/1d/3d), schedule {'pinned' if schedule['msg'] else 'loaded' if schedule['loaded'] else 'not read yet'}")
         ats, cover = extras.build_ats_cv(latinize(d)), extras.build_cover_letter(latinize(d), None)
         out.append(f"gift files: ATS CV {'OK' if ats[:4] == b'%PDF' else 'BAD'}, cover letter {'OK' if cover[:4] == b'%PDF' else 'BAD'}")
         if used_ai:
