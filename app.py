@@ -1694,7 +1694,8 @@ def payment_message(order=None):
             "🤝 ونعرض السي في مالتك على الشركات اللي تطلب موظفين.")
 
 
-PAY_HELP = [[{"text": "🤔 عندي مشكلة بالدفع", "callback_data": "pay:why"}]]
+PAY_NOW = [[{"text": "💳 ادفع هسه", "callback_data": "pay:how"}]]
+PREVIEW_REMINDER = env("PREVIEW_REMINDER").lower() in ("on", "1", "yes", "true")  # the 2-hour reminder shows their draft
 
 
 GIFT_TEASER = (
@@ -1887,8 +1888,8 @@ def finish_cv(chat_id, sess):
     if PAID:
         sess["mode"], sess["step"] = "cv", "payment"
         sess["admin_msg"] = admin_msg
-        send(chat_id, payment_message(admin_msg), remove_keyboard=True, inline=PAY_HELP)
-        add_unpaid(chat_id, admin_msg)
+        send(chat_id, payment_message(admin_msg), remove_keyboard=True)
+        add_unpaid(chat_id, admin_msg, ((res.get("result") or {}).get("document") or {}).get("file_id"))
     else:
         sessions.pop(chat_id, None)
         send(chat_id, f"✅ <b>استلمنا طلبك #M{admin_msg}</b>\nفريقنا يراجعه، والسي في يوصلك هنا ويا الكورسات 🎓",
@@ -2095,23 +2096,22 @@ def save_schedule():
 
 UNPAID_REMIND = (2 * 3600, 24 * 3600, 72 * 3600)  # after the payment message; then no more
 unpaid = {}  # order (admin CV message id) -> {"u": user, "t": payment message time, "n": reminders sent, "due": next}
-PAY_REASONS = {"price": "💰 السعر غالي", "card": "💳 ما عندي Qi Card", "later": "⏳ أدفع بعدين", "other": "💬 سبب ثاني"}
+PAY_REASONS = {"price": "💰 السعر غالي", "card": "💳 ما عندي Qi Card", "other": "💬 سبب ثاني"}  # no "later": pay now
 REASON_BUTTONS = [[{"text": PAY_REASONS["price"], "callback_data": "pay:r:price"},
-                   {"text": PAY_REASONS["card"], "callback_data": "pay:r:card"}],
-                  [{"text": PAY_REASONS["later"], "callback_data": "pay:r:later"},
-                   {"text": PAY_REASONS["other"], "callback_data": "pay:r:other"}]]
+                   {"text": PAY_REASONS["card"], "callback_data": "pay:r:card"}]]
 
 
 def unpaid_order(chat_id):
     return next((k for k, v in list(unpaid.items()) if v["u"] == chat_id), None)
 
 
-def add_unpaid(chat_id, order):
+def add_unpaid(chat_id, order, file_id=None):
     with schedule_lock:
         for k in [k for k, v in unpaid.items() if v["u"] == chat_id]:
             unpaid.pop(k, None)
         now = time.time()
-        unpaid[order] = {"u": chat_id, "t": now, "n": 0, "due": in_work_hours(now + UNPAID_REMIND[0])}
+        unpaid[order] = {"u": chat_id, "t": now, "n": 0, "due": in_work_hours(now + UNPAID_REMIND[0]),
+                         "f": file_id}  # the CV file (memory only): for the draft preview
         while len(unpaid) > 60:
             unpaid.pop(min(unpaid))
     save_schedule()
@@ -2126,22 +2126,44 @@ def drop_unpaid(chat_id):
         save_schedule()
 
 
+def send_draft_preview(order, p, caption):
+    """Their own CV, top sharp and the rest blurred, as 'the first draft our team prepared'."""
+    try:
+        pdf = download_file(p.get("f"), max_bytes=10 * 1024 * 1024) if p.get("f") else None
+        img = extras.preview_image(pdf) if pdf else None
+        if not img:
+            return {"ok": False}
+        return http.post(f"{API}/sendPhoto", timeout=60, data={
+            "chat_id": str(p["u"]), "caption": caption, "parse_mode": "HTML",
+            "reply_markup": json.dumps({"inline_keyboard": PAY_NOW})},
+            files={"photo": ("draft.jpg", img, "image/jpeg")}).json()
+    except Exception:
+        log.exception("draft preview failed")
+        return {"ok": False}
+
+
 def pay_reminder(order, p):
-    """The reminders for a CV that was not paid (the third asks what is stopping them)."""
+    """The reminders for a CV that was not paid: each one has one button, pay now."""
     n = p["n"]
     if n == 0:
+        if PREVIEW_REMINDER:
+            res = send_draft_preview(order, p, f"👀 <b>فريقنا جهّز المسودة الأولى للسي في مالتك</b> (طلب #M{order})\n"
+                                               "النسخة الكاملة توصلك بعد الدفع، ويا الكورسات 🎓\n"
+                                               "🤝 وبعدها نعرض السي في مالتك على الشركات اللي تطلب موظفين.")
+            if res.get("ok"):
+                return res
         text = (f"⏳ <b>طلبك #M{order} محفوظ عدنا</b>\n"
                 "باقي بس الدفع حتى يبدي فريقنا يجهز السي في مالتك، ويوصلك ويا الكورسات 🎓\n"
                 "🤝 وبعدها نعرض السي في مالتك على الشركات اللي تطلب موظفين.")
-        buttons = [[{"text": "💳 شلون أدفع؟", "callback_data": "pay:how"}]] + PAY_HELP
+        buttons = PAY_NOW
     elif n == 1:
         text = (f"📌 <b>تذكير بطلبك #M{order}</b>\n"
                 "الشركات تطلب موظفين كل يوم، وسيفك يدخل ضمن المرشحين عدنا أول ما يتأكد الدفع 🤝\n"
                 f"📄 والسي في يوصلك {CV_WAIT} من تأكيد الدفع.")
-        buttons = [[{"text": "💳 شلون أدفع؟", "callback_data": "pay:how"}]] + PAY_HELP
+        buttons = PAY_NOW
     else:
-        text = f"⏰ <b>آخر تذكير بطلبك #M{order}</b>\nإذا أكو شي مانعك من الدفع، گلنا حتى نساعدك 👇"
-        buttons = REASON_BUTTONS + [[{"text": "💳 أريد أدفع هسه", "callback_data": "pay:how"}]]
+        text = f"⏰ <b>آخر تذكير بطلبك #M{order}</b>\nادفع هسه حتى يوصلك السي في ويا الكورسات 👇"
+        buttons = PAY_NOW + REASON_BUTTONS
     return send(p["u"], text, inline=buttons)
 
 
@@ -2170,26 +2192,16 @@ def remind_unpaid(now=None):
 def pay_answer(chat_id, user, what):
     """The buttons under the payment message and the reminders."""
     order = unpaid_order(chat_id)
-    if what == "how":
-        send(chat_id, payment_message(order), inline=PAY_HELP)
-        return
-    if what == "why":
-        send(chat_id, "شنو المانع؟ 👇", inline=REASON_BUTTONS)
-        return
     reason = PAY_REASONS.get(what)
-    if not reason:
+    if what in ("how", "why", "later") or not reason:  # old "pay later" / "problem" buttons -> just the payment
+        send(chat_id, payment_message(order))
         return
     p = unpaid.get(order) or {}
     if ADMIN_CHAT_ID:
         send(ADMIN_CHAT_ID, f"📊 <b>ما دفع، والسبب:</b> {reason}\n👤 {user_handle(user, chat_id)}"
                             + (f"\n🧾 طلب #M{order}" if order else "")
                             + "\n<i>رد على هاي الرسالة حتى تحچي وياه.</i>", reply_to=order)
-    if what == "later":
-        if p:
-            p["n"] = min(p["n"], len(UNPAID_REMIND) - 1)
-            p["due"] = in_work_hours(time.time() + 24 * 3600)
-        send(chat_id, "تمام 🤍 طلبك محفوظ، ونذكرك باچر.")
-    elif what == "other":
+    if what == "other":
         new_session(chat_id, "contact", "contact_msg", user)
         send(chat_id, "اكتبلنا شنو المانع، ويرد عليك أحد موظفينا هنا 👇")
     else:
@@ -2636,7 +2648,7 @@ def handle_callback(cq):
             elif sess["step"] == "talk":
                 send(chat_id, sess.get("last_q") or TALK_INTRO)
             elif sess["step"] == "payment":
-                send(chat_id, payment_message(unpaid_order(chat_id)), inline=PAY_HELP)
+                send(chat_id, payment_message(unpaid_order(chat_id)))
             elif sess["step"] == "confirm":
                 show_summary(chat_id, sess)
             else:
@@ -2907,7 +2919,7 @@ def handle_update(upd):
             mins = int((time.time() - pending_payments[chat_id]["t"]) / 60)
             send(chat_id, f"⏳ موظفنا دا يتأكد من الدفع هسه، وبعدها نجهز السي في مالتك 🤍")
         elif not cmd and unpaid_order(chat_id) and len(clean(text)) < 40 and not msg.get("voice"):
-            send(chat_id, "⏳ السي في مالتك ينتظر الدفع بس 👇\n\n" + payment_message(unpaid_order(chat_id)), inline=PAY_HELP)
+            send(chat_id, "⏳ السي في مالتك ينتظر الدفع بس 👇\n\n" + payment_message(unpaid_order(chat_id)))
         elif not cmd and waiting_delivery(chat_id):
             order, job = waiting_delivery(chat_id)
             send(chat_id, f"⏳ فريقنا دا يجهز السي في مالتك، ويوصلك هنا "
@@ -3093,7 +3105,7 @@ def self_test():
                    + f", channel: {'linked' if CHANNEL_ID else 'not linked (admin posts by hand)'}")
         out.append(f"cv delivery: {'right after approval' if DELIVERY_MODE == 'now' else 'admin chooses (buttons)'}"
                    f", buyer told '{CV_WAIT}', later button {CV_DELAY} min, working hours {WORK_START}-{WORK_END} Baghdad"
-                   f", waiting {len(deliveries)}, unpaid {len(unpaid)} (reminders 2h/1d/3d), schedule {'pinned' if schedule['msg'] else 'loaded' if schedule['loaded'] else 'not read yet'}")
+                   f", waiting {len(deliveries)}, unpaid {len(unpaid)} (reminders 2h/1d/3d, draft preview {'on' if PREVIEW_REMINDER else 'off'}), schedule {'pinned' if schedule['msg'] else 'loaded' if schedule['loaded'] else 'not read yet'}")
         ats, cover = extras.build_ats_cv(latinize(d)), extras.build_cover_letter(latinize(d), None)
         out.append(f"gift files: ATS CV {'OK' if ats[:4] == b'%PDF' else 'BAD'}, cover letter {'OK' if cover[:4] == b'%PDF' else 'BAD'}")
         if used_ai:
